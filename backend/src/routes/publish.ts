@@ -9,7 +9,7 @@ import {
   updatePlatformToken,
   PlatformType,
   PublishContent,
-} from '../services/publish.js';
+} from '../services/publish/index.js';
 import { SmartPublisher } from '../services/publish/smartPublisher.js';
 import { ExtensionTaskQueue } from '../services/extension/taskQueue.js';
 
