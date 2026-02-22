@@ -1,0 +1,20 @@
+.topic-suggestions-page {
+  padding: 24px;
+}
+
+.topic-suggestions-page .ant-card {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.topic-suggestions-page .ant-tabs {
+  margin-top: 16px;
+}
+
+.topic-suggestions-page .ant-tabs-tab {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.topic-suggestions-page .ant-empty {
+  margin: 40px 0;
+}

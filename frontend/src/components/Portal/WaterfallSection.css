@@ -1,0 +1,63 @@
+.waterfall-section {
+  column-gap: 12px;
+}
+
+.waterfall-section.columns-2 {
+  column-count: 2;
+}
+
+.waterfall-section.columns-3 {
+  column-count: 3;
+}
+
+.waterfall-item {
+  break-inside: avoid;
+  margin-bottom: 12px;
+  background: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  cursor: pointer;
+}
+
+.waterfall-cover img {
+  width: 100%;
+  display: block;
+}
+
+.waterfall-content {
+  padding: 12px;
+}
+
+.waterfall-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #333;
+}
+
+.waterfall-summary {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #666;
+  line-height: 1.5;
+}
+
+.waterfall-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #999;
+}
+
+.waterfall-category {
+  font-weight: 500;
+}
+
+.waterfall-empty {
+  text-align: center;
+  padding: 32px;
+  color: #999;
+  background: #f5f5f5;
+  border-radius: 8px;
+}

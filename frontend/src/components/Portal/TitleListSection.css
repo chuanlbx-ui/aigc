@@ -1,0 +1,83 @@
+.title-list-section {
+  background: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.title-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background 0.2s;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.title-item:last-child {
+  border-bottom: none;
+}
+
+.title-item:active {
+  background: #f5f5f5;
+}
+
+.item-index {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  background: #f0f0f0;
+  color: #666;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-right: 12px;
+}
+
+.title-item:nth-child(1) .item-index {
+  background: #ff4d4f;
+  color: #fff;
+}
+
+.title-item:nth-child(2) .item-index {
+  background: #ff7a45;
+  color: #fff;
+}
+
+.title-item:nth-child(3) .item-index {
+  background: #ffa940;
+  color: #fff;
+}
+
+.item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.item-title {
+  display: block;
+  font-size: 15px;
+  color: #333;
+  line-height: 1.5;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.title-list-section .category-tag {
+  font-weight: 500;
+}
+
+.title-list-section .date {
+  color: #999;
+}

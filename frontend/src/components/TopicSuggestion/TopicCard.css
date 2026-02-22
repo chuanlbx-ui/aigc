@@ -1,0 +1,38 @@
+.topic-card {
+  transition: all 0.3s ease;
+}
+
+.topic-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.topic-card .topic-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.topic-card .topic-title {
+  font-size: 16px;
+  line-height: 1.5;
+  max-width: 70%;
+}
+
+.topic-card .topic-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.topic-card.compact {
+  margin-bottom: 8px;
+}
+
+.topic-card.compact .topic-title {
+  font-size: 14px;
+}

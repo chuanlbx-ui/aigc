@@ -1,0 +1,961 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+// 数据库配置
+// 开发环境使用 SQLite，生产环境切换到 PostgreSQL 需要：
+// 1. 修改下方 provider 为 "postgresql"
+// 2. 更新 .env 中的 DATABASE_URL
+// 3. 运行 npx prisma db push
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector]
+}
+
+model Project {
+  id        String   @id @default(uuid())
+  name      String
+  status    String   @default("draft")
+  config    String   // JSON string
+  outputPath String?
+  tenantId  String?
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tasks     RenderTask[]
+}
+
+model Asset {
+  id         String    @id @default(uuid())
+  name       String
+  type       String    // image | video | audio
+  path       String
+  tags       String    @default("[]") // JSON array
+  source     String    @default("upload")
+  categoryId String?
+  tenantId   String?
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id])
+  category   AssetCategory? @relation(fields: [categoryId], references: [id])
+  createdAt  DateTime  @default(now())
+}
+
+model AssetCategory {
+  id        String   @id @default(uuid())
+  name      String
+  type      String   // image | video | audio | all
+  createdAt DateTime @default(now())
+  assets    Asset[]
+}
+
+model RenderTask {
+  id          String   @id @default(uuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id])
+  status      String   @default("queued")
+  progress    Int      @default(0)
+  error       String?
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+}
+
+model PopupTemplate {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  category    String   @default("custom")  // system | custom
+  isSystem    Boolean  @default(false)
+  config      String                       // JSON: 弹窗样式配置
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ========== 知识库系统 ==========
+
+// 知识库文档
+model KnowledgeDoc {
+  id          String   @id @default(uuid())
+  title       String
+  slug        String   @unique
+  summary     String?
+  filePath    String                          // MD文件相对路径
+  source      String   @default("manual")     // manual | ai-search | import
+  sourceUrl   String?
+  categoryId  String?
+  tenantId    String?
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  category    KnowledgeCategory? @relation(fields: [categoryId], references: [id])
+  tags        String   @default("[]")         // JSON数组
+  version     Int      @default(1)
+  versions    KnowledgeVersion[]
+  wordCount   Int      @default(0)
+  readTime    Int      @default(0)            // 预估阅读时间(分钟)
+  isPinned    Boolean  @default(false)
+  embedding   Unsupported("vector(1536)")?    // 文档向量（DeepSeek embedding）
+  embeddedAt  DateTime?                       // 向量化时间
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// 知识库分类（支持二级）
+model KnowledgeCategory {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  icon        String?
+  color       String?
+  parentId    String?
+  parent      KnowledgeCategory? @relation("CategoryTree", fields: [parentId], references: [id])
+  children    KnowledgeCategory[] @relation("CategoryTree")
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  docs        KnowledgeDoc[]
+}
+
+// 版本历史
+model KnowledgeVersion {
+  id          String   @id @default(uuid())
+  docId       String
+  doc         KnowledgeDoc @relation(fields: [docId], references: [id], onDelete: Cascade)
+  version     Int
+  filePath    String
+  changeNote  String?
+  createdAt   DateTime @default(now())
+  @@unique([docId, version])
+}
+
+// AI服务配置
+model AIServiceConfig {
+  id          String   @id @default(uuid())
+  name        String
+  provider    String                          // claude | openai | deepseek | qwen
+  apiKey      String
+  baseUrl     String?
+  model       String
+  isDefault   Boolean  @default(false)
+  isEnabled   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// 图片服务配置
+model ImageServiceConfig {
+  id          String   @id @default(uuid())
+  name        String
+  provider    String                          // unsplash | pexels | pixabay | dashscope
+  apiKey      String
+  isEnabled   Boolean  @default(true)
+  priority    Int      @default(0)            // 优先级，数字越大优先级越高
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ========== 统一媒体服务配置 ==========
+
+// 媒体服务配置（统一管理 AI、图片、视频、音频、数字人等服务）
+model MediaServiceConfig {
+  id            String   @id @default(uuid())
+  name          String                          // 显示名称（用户自定义）
+  provider      String                          // 服务商标识
+  serviceType   String                          // ai_chat | image_search | image_generate | video_generate | video_search | audio_search | tts | digital_human
+  modelId       String?                         // 模型ID（如 gpt-4o, claude-3-5-sonnet）
+  modelVersion  String?                         // 模型版本（如 2024-01-01, latest）
+  apiKey        String?                         // API密钥
+  apiEndpoint   String?                         // 自定义端点（支持代理/私有部署）
+  apiVersion    String?                         // API版本（如 v1, 2024-02-01）
+  config        String   @default("{}")         // JSON扩展配置
+  isEnabled     Boolean  @default(true)
+  priority      Int      @default(0)            // 优先级，数字越大越优先
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([provider, serviceType, modelId])
+  @@index([serviceType])
+  @@index([isEnabled])
+}
+
+// ========== 文章创作系统 ==========
+
+// 文章主表
+model Article {
+  id              String   @id @default(uuid())
+  title           String
+  slug            String   @unique
+  summary         String?
+  filePath        String                          // MD文件路径
+  coverImage      String?
+  tenantId        String?
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id])
+
+  status          String   @default("draft")      // draft | published | archived
+  publishedAt     DateTime?
+  platform        String                          // wechat | xiaohongshu | video
+  column          String                          // 深度/速递/体验/教程/对话/种草/观点/演示
+
+  workflowStep    Int      @default(0)            // 当前工作流步骤
+  workflowData    String   @default("{}")         // 工作流数据JSON
+
+  // 工作流配置模板
+  templateId      String?
+  template        WorkflowTemplate? @relation(fields: [templateId], references: [id])
+
+  categoryId      String?
+  category        ArticleCategory? @relation(fields: [categoryId], references: [id])
+  tags            String   @default("[]")         // JSON数组
+  knowledgeRefs   String   @default("[]")         // 引用的知识库文档ID
+
+  hkrScore        String?                         // HKR评分JSON
+  aiReviewStatus  String   @default("pending")    // pending | passed | needs_revision
+  layoutTheme     String   @default("default")    // 排版主题ID
+
+  wordCount       Int      @default(0)
+  readTime        Int      @default(0)
+  viewCount       Int      @default(0)
+  version         Int      @default(1)
+  versions        ArticleVersion[]
+
+  // 热点关联
+  hotTopicId      String?
+  hotTopic        HotTopic? @relation(fields: [hotTopicId], references: [id])
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  posters         Poster[]
+}
+
+// 文章分类
+model ArticleCategory {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  icon        String?
+  color       String?
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  articles    Article[]
+}
+
+// 文章版本历史
+model ArticleVersion {
+  id          String   @id @default(uuid())
+  articleId   String
+  article     Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  version     Int
+  filePath    String
+  changeNote  String?
+  createdAt   DateTime @default(now())
+  @@unique([articleId, version])
+}
+
+// 热门选题
+model HotTopic {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  source      String                          // weibo | toutiao | zhihu | reddit
+  sourceUrl   String?
+  hotScore    Int                             // 热度分数
+  category    String?                         // 分类：科技/娱乐/社会等
+  tags        String   @default("[]")         // 标签数组 JSON
+
+  // 智能推荐新增字段
+  domain          String?                     // 领域分类: tech | finance | culture | life
+  sourceType      String   @default("news")   // news | knowledge | report | social
+  generatedBy     String?                     // 如果是AI生成,记录生成方式
+  qualityScore    Float?                      // 选题质量评分 (0-1)
+  recommendScore  Float?                      // 推荐评分 (综合热度+相关性+质量)
+
+  // 知识库匹配
+  matchedKnowledgeIds String @default("[]")   // 匹配的知识库文档ID JSON数组
+  relevanceScore      Float?                  // 相关性评分 (0-1)
+
+  // 元数据
+  fetchedAt   DateTime @default(now())
+  expiresAt   DateTime                        // 过期时间（24小时后）
+  isActive    Boolean  @default(true)
+
+  // 关联
+  articles    Article[]                       // 基于此热点创建的文章
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([source, fetchedAt])
+  @@index([isActive, hotScore])
+  @@index([domain, recommendScore])
+  @@index([sourceType, isActive])
+}
+
+// 海报
+model Poster {
+  id          String   @id @default(uuid())
+  name        String
+  quote       String
+  theme       String   @default("light")
+  brandText   String?
+  qrUrl       String?
+  filePath    String
+  articleId   String?
+  article     Article? @relation(fields: [articleId], references: [id])
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ========== 工作流系统（新增） ==========
+
+// 工作流配置模板
+model WorkflowTemplate {
+  id          String   @id @default(uuid())
+  name        String                            // 模板名称
+  description String?                           // 模板描述
+
+  // 模板类型
+  type        String   @default("custom")       // system | custom
+  isSystem    Boolean  @default(false)          // 是否系统预设
+  isDefault   Boolean  @default(false)          // 是否默认模板
+
+  // 适用范围
+  platform    String?                           // wechat | xiaohongshu | video | null(通用)
+  column      String?                           // 深度 | 速递 | null(通用)
+
+  // 配置内容（JSON）
+  config      String   @default("{}")
+
+  // 版本管理
+  version     Int      @default(1)
+  parentId    String?
+  parent      WorkflowTemplate? @relation("TemplateVersions", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  versions    WorkflowTemplate[] @relation("TemplateVersions")
+
+  // 使用统计
+  usageCount  Int      @default(0)
+
+  // 多租户
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+
+  isEnabled   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // 关联文章
+  articles    Article[]
+}
+
+// 工作流步骤记录
+model WorkflowStep {
+  id          String    @id @default(uuid())
+  articleId   String
+  step        Int                               // 步骤编号 0-9
+  status      String    @default("pending")     // pending | in_progress | completed | skipped
+  data        String    @default("{}")          // 该步骤的数据 JSON
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  @@unique([articleId, step])
+}
+
+// HKR 评分记录（结构化存储）
+model ArticleScore {
+  id          String   @id @default(uuid())
+  articleId   String   @unique
+  hScore      Int      @default(0)              // 活人感 0-100
+  kScore      Int      @default(0)              // 知识性 0-100
+  rScore      Int      @default(0)              // 真诚性 0-100
+  overall     Int      @default(0)              // 综合评分 0-100
+  hComment    String?                           // 活人感评语
+  kComment    String?                           // 知识性评语
+  rComment    String?                           // 真诚性评语
+  suggestions String   @default("[]")           // 改进建议 JSON数组
+  evaluatedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// 文章-知识库关联表
+model ArticleKnowledgeRef {
+  id        String   @id @default(uuid())
+  articleId String
+  docId     String
+  excerpt   String?                             // 引用的摘录
+  position  Int?                                // 在文章中的位置
+  createdAt DateTime @default(now())
+  @@unique([articleId, docId])
+}
+
+// ========== 模板系统（新增） ==========
+
+// 通用模板表
+model Template {
+  id        String   @id @default(uuid())
+  type      String                              // article | poster | video
+  name      String
+  description String?
+  config    String   @default("{}")             // JSON 配置
+  thumbnail String?                             // 缩略图路径
+  tenantId  String?
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  isSystem  Boolean  @default(false)            // 是否系统预设
+  isEnabled Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ========== AI 调用日志系统 ==========
+
+// AI 调用日志
+model AICallLog {
+  id            String   @id @default(uuid())
+  provider      String                          // openai | claude | deepseek
+  model         String                          // gpt-4 | claude-3 等
+  endpoint      String                          // chat | completion | embedding
+  feature       String                          // article_gen | hkr_review | search 等
+
+  inputTokens   Int      @default(0)
+  outputTokens  Int      @default(0)
+  totalTokens   Int      @default(0)
+
+  costUsd       Float    @default(0)            // 预估成本（美元）
+  latencyMs     Int      @default(0)            // 响应延迟（毫秒）
+
+  status        String   @default("success")    // success | error
+  errorMessage  String?
+
+  requestId     String?                         // 关联的业务ID（文章ID等）
+  requestType   String?                         // article | knowledge 等
+
+  createdAt     DateTime @default(now())
+}
+
+// AI 使用统计（按日汇总）
+model AIUsageDaily {
+  id            String   @id @default(uuid())
+  date          DateTime
+  provider      String
+  model         String
+
+  callCount     Int      @default(0)
+  totalTokens   Int      @default(0)
+  inputTokens   Int      @default(0)
+  outputTokens  Int      @default(0)
+  totalCostUsd  Float    @default(0)
+  avgLatencyMs  Int      @default(0)
+  errorCount    Int      @default(0)
+
+  @@unique([date, provider, model])
+}
+
+// ========== 多租户系统 ==========
+
+// 租户
+model Tenant {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  domain      String?  @unique
+  plan        String   @default("free")
+  config      String   @default("{}")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  users       User[]
+  usageRecords UsageRecord[]
+}
+
+// 用户
+model User {
+  id          String   @id @default(uuid())
+  email       String   @unique
+  phone       String?  @unique
+  password    String
+  name        String?
+  avatar      String?
+  role        String   @default("member")
+  tenantId    String?
+  tenant      Tenant?  @relation(fields: [tenantId], references: [id])
+  isActive    Boolean  @default(true)
+  lastLoginAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  sessions    Session[]
+  projects    Project[]
+  assets      Asset[]
+  knowledgeDocs KnowledgeDoc[]
+  articles    Article[]
+  templates   Template[]
+  posters     Poster[]
+  workflowTemplates WorkflowTemplate[]
+  clonedVoices ClonedVoice[]
+}
+
+// 用户会话
+model Session {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token       String   @unique
+  expiresAt   DateTime
+  userAgent   String?
+  ip          String?
+  createdAt   DateTime @default(now())
+}
+
+// 用量记录
+model UsageRecord {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  type      String
+  amount    Int
+  date      DateTime
+  createdAt DateTime @default(now())
+}
+
+// ========== 计费系统 ==========
+
+// 套餐配置
+model Plan {
+  id            String   @id @default(uuid())
+  name          String   @unique
+  displayName   String
+  price         Float    @default(0)
+  billingCycle  String   @default("monthly")
+  articleLimit  Int      @default(10)
+  videoMinutes  Int      @default(5)
+  aiCallLimit   Int      @default(100)
+  storageGb     Int      @default(1)
+  features      String   @default("[]")
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+}
+
+// 订阅记录
+model Subscription {
+  id          String    @id @default(uuid())
+  tenantId    String
+  planName    String
+  status      String    @default("active")
+  startDate   DateTime  @default(now())
+  endDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// 支付订单
+model PaymentOrder {
+  id          String    @id @default(uuid())
+  tenantId    String
+  planName    String
+  amount      Int                               // 金额（分）
+  status      String    @default("pending")     // pending | paid | failed | refunded
+  wxOrderId   String?                           // 微信订单号
+  wxPrepayId  String?                           // 微信预支付ID
+  paidAt      DateTime?
+  refundedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// ========== 多平台发布系统 ==========
+
+// 发布平台配置
+model PublishPlatform {
+  id            String    @id @default(uuid())
+  name          String                            // wechat | xiaohongshu | toutiao | zhihu | weibo | bilibili | douyin | kuaishou
+  displayName   String                            // 显示名称
+
+  // 认证信息
+  appId         String?
+  appSecret     String?
+  accessToken   String?
+  refreshToken  String?
+  tokenExpireAt DateTime?
+
+  // 账号信息
+  accountId     String?
+  accountName   String?
+  accountAvatar String?
+
+  // 配置
+  config        String    @default("{}")
+  isEnabled     Boolean   @default(true)
+  tenantId      String?
+
+  // 扩展发布相关字段
+  publishMethod     String    @default("api")        // api | extension | hybrid
+  extensionRequired Boolean   @default(false)        // 是否必须使用扩展
+  apiAvailable      Boolean   @default(true)         // 是否支持 API 发布
+  extensionConfig   String    @default("{}")         // 扩展特定配置 JSON
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  records       PublishRecord[]
+}
+
+// 发布记录
+model PublishRecord {
+  id              String    @id @default(uuid())
+
+  // 关联内容
+  contentType     String                          // article | video
+  contentId       String
+  contentTitle    String
+
+  // 发布平台
+  platformId      String
+  platform        PublishPlatform @relation(fields: [platformId], references: [id])
+  platformName    String
+
+  // 发布状态
+  status          String    @default("pending")   // pending | processing | draft_saved | published | failed | cancelled
+
+  // 发布结果
+  platformPostId  String?
+  platformUrl     String?
+
+  // 错误信息
+  errorCode       String?
+  errorMessage    String?
+  retryCount      Int       @default(0)
+  maxRetries      Int       @default(3)
+
+  // 发布选项
+  publishMode     String    @default("draft")     // draft | publish
+  scheduledAt     DateTime?
+
+  // 批次关联
+  batchId         String?
+
+  // 扩展发布相关字段
+  publishMethod     String    @default("api")      // api | extension
+  extensionVersion  String?                        // 使用的扩展版本
+  extensionTaskId   String?                        // 扩展任务ID
+  extensionLogs     String    @default("[]")       // 扩展执行日志 JSON
+
+  tenantId        String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  publishedAt     DateTime?
+
+  @@index([contentType, contentId])
+  @@index([platformId])
+  @@index([status])
+  @@index([batchId])
+}
+
+// 批量发布批次
+model PublishBatch {
+  id            String    @id @default(uuid())
+
+  name          String?
+  contentType   String                            // article | video
+  contentIds    String                            // JSON 数组
+  platformIds   String                            // JSON 数组
+
+  // 状态统计
+  totalCount    Int       @default(0)
+  pendingCount  Int       @default(0)
+  successCount  Int       @default(0)
+  failedCount   Int       @default(0)
+
+  status        String    @default("pending")     // pending | processing | completed | cancelled
+  publishMode   String    @default("draft")
+
+  tenantId      String?
+  createdAt     DateTime  @default(now())
+  completedAt   DateTime?
+}
+
+// ========== 浏览器扩展发布系统 ==========
+
+// 扩展状态跟踪
+model ExtensionStatus {
+  id              String    @id @default(uuid())
+
+  // 用户关联
+  userId          String?
+  tenantId        String?
+
+  // 扩展信息
+  extensionId     String
+  version         String
+  isInstalled     Boolean   @default(false)
+  isEnabled       Boolean   @default(false)
+
+  // 连接状态
+  lastPingAt      DateTime?
+  connectionType  String?                           // http_polling | websocket
+
+  // 浏览器信息
+  browserType     String?                           // chrome | edge | firefox
+  browserVersion  String?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([userId, extensionId])
+}
+
+// 扩展任务队列
+model ExtensionTask {
+  id              String    @id @default(uuid())
+
+  // 关联发布记录
+  publishRecordId String    @unique
+
+  // 任务信息
+  taskType        String                            // publish | draft | delete
+  priority        Int       @default(0)
+
+  // 任务状态
+  status          String    @default("queued")      // queued | sent | processing | completed | failed | timeout
+
+  // 任务数据
+  payload         String                            // JSON: 发布内容和配置
+  result          String?                           // JSON: 执行结果
+
+  // 时间追踪
+  queuedAt        DateTime  @default(now())
+  sentAt          DateTime?
+  startedAt       DateTime?
+  completedAt     DateTime?
+
+  // 重试机制
+  retryCount      Int       @default(0)
+  maxRetries      Int       @default(3)
+  nextRetryAt     DateTime?
+
+  // 超时控制
+  timeoutSeconds  Int       @default(300)           // 默认5分钟超时
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status])
+  @@index([queuedAt])
+}
+
+// ========== 模板版本管理系统 ==========
+
+// 模板版本历史
+model TemplateVersion {
+  id            String   @id @default(uuid())
+  templateId    String
+  templateType  String                          // popup | workflow | general
+  version       Int
+  config        String                          // JSON 配置快照
+  changelog     String?                         // 变更说明
+  createdBy     String?                         // 创建者ID
+  createdAt     DateTime @default(now())
+
+  @@unique([templateId, templateType, version])
+  @@index([templateId, templateType])
+}
+
+// ========== 模板分享系统 ==========
+
+// 模板分享记录
+model TemplateShare {
+  id            String   @id @default(uuid())
+  templateId    String
+  templateType  String                          // popup | workflow | general
+  shareCode     String   @unique                // 分享码
+  permission    String   @default("view")       // view | clone | edit
+  expiresAt     DateTime?                       // 过期时间
+  maxUses       Int?                            // 最大使用次数
+  useCount      Int      @default(0)            // 已使用次数
+  createdBy     String?
+  createdAt     DateTime @default(now())
+
+  @@index([templateId, templateType])
+}
+
+// ========== 模板组合系统 ==========
+
+// 模板组合包
+model TemplateBundle {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  bundleType  String   @default("sequential")  // sequential | parallel | conditional
+  config      String   @default("{}")          // JSON: 组合逻辑配置
+  userId      String?
+  isSystem    Boolean  @default(false)
+  isEnabled   Boolean  @default(true)
+  usageCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  items       TemplateBundleItem[]
+}
+
+// 组合包中的模板项
+model TemplateBundleItem {
+  id            String   @id @default(uuid())
+  bundleId      String
+  bundle        TemplateBundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+  templateId    String
+  templateType  String
+  sortOrder     Int      @default(0)
+  condition     String?
+  paramMapping  String   @default("{}")
+  createdAt     DateTime @default(now())
+
+  @@unique([bundleId, templateId, templateType])
+  @@index([bundleId])
+}
+
+// ========== 模板市场系统 ==========
+
+// 市场模板
+model MarketplaceTemplate {
+  id            String   @id @default(uuid())
+  templateId    String
+  templateType  String
+
+  // 发布信息
+  title         String
+  description   String?
+  thumbnail     String?
+
+  // 分类和标签
+  category      String?
+  tags          String   @default("[]")
+
+  // 发布者
+  publisherId   String
+  publisherName String?
+
+  // 状态
+  status        String   @default("pending")  // pending | approved | rejected
+  reviewNote    String?
+
+  // 统计
+  downloads     Int      @default(0)
+  rating        Float    @default(0)
+  ratingCount   Int      @default(0)
+
+  // 价格（0表示免费）
+  price         Int      @default(0)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  reviews       MarketplaceReview[]
+
+  @@index([status])
+  @@index([category])
+}
+
+// 市场评论
+model MarketplaceReview {
+  id            String   @id @default(uuid())
+  marketplaceId String
+  marketplace   MarketplaceTemplate @relation(fields: [marketplaceId], references: [id], onDelete: Cascade)
+  userId        String
+  userName      String?
+  rating        Int
+  comment       String?
+  createdAt     DateTime @default(now())
+
+  @@index([marketplaceId])
+}
+
+// ========== 用户端内容展示系统 (Portal) ==========
+
+// 专题页面
+model TopicPage {
+  id            String   @id @default(uuid())
+  name          String                          // 管理名称
+  slug          String   @unique                // URL标识
+  title         String                          // 页面标题
+  description   String?
+  coverImage    String?
+  template      String   @default("default")    // 页面模板: default | magazine | minimal
+  config        String   @default("{}")         // 页面配置JSON
+  status        String   @default("draft")      // draft | published
+  publishedAt   DateTime?
+  viewCount     Int      @default(0)
+  sortOrder     Int      @default(0)
+  tenantId      String?
+  userId        String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  sections      TopicPageSection[]
+
+  @@index([status])
+  @@index([slug])
+}
+
+// 页面区块
+model TopicPageSection {
+  id               String    @id @default(uuid())
+  pageId           String
+  page             TopicPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+  name             String
+  type             String                          // banner | card_list | title_list | video_list
+  title            String?
+  showTitle        Boolean   @default(true)
+  layoutConfig     String    @default("{}")        // 布局配置JSON
+  filterConfig     String    @default("{}")        // 内容筛选规则JSON
+  manualContentIds String    @default("[]")        // 手动指定内容ID
+  sortOrder        Int       @default(0)
+  isEnabled        Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([pageId])
+  @@index([sortOrder])
+}
+
+// API访问令牌（供外部系统调用）
+model ApiToken {
+  id          String    @id @default(uuid())
+  name        String                          // 令牌名称（如"小程序"）
+  token       String    @unique               // 访问令牌
+  permissions String    @default("[\"read\"]") // 权限列表
+  rateLimit   Int       @default(1000)        // 每小时请求限制
+  isEnabled   Boolean   @default(true)
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  usageCount  Int       @default(0)
+  tenantId    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([token])
+}
+
+// ========== 声音克隆系统 ==========
+
+// 克隆声音
+model ClonedVoice {
+  id              String   @id @default(uuid())
+  name            String                          // 声音名称
+  provider        String                          // fish-speech | elevenlabs
+  referenceAudio  String                          // 参考音频路径
+  referenceText   String?                         // 参考音频对应文字
+  voiceId         String?                         // 提供商返回的声音ID
+  status          String   @default("pending")    // pending | processing | ready | failed
+  errorMessage    String?
+  previewUrl      String?                         // 试听音频URL
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id])
+  tenantId        String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status])
+}

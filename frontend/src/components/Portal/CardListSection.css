@@ -1,0 +1,195 @@
+.card-list-section {
+  display: grid;
+  gap: 12px;
+}
+
+.card-list-section.columns-1 {
+  grid-template-columns: 1fr;
+}
+
+.card-list-section.columns-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.card-list-section.columns-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.card-item {
+  background: #fff;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card-item:active {
+  transform: scale(0.98);
+}
+
+/* 默认样式 */
+.style-default .card-cover {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+}
+
+.style-default .card-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.style-default .cover-placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.style-default .card-content {
+  padding: 12px;
+}
+
+/* 紧凑样式 */
+.style-compact .card-cover {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+}
+
+.style-compact .card-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.style-compact .cover-placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.style-compact .card-content {
+  padding: 8px;
+}
+
+.style-compact .card-title {
+  font-size: 14px;
+}
+
+.style-compact .card-summary {
+  display: none;
+}
+
+/* 大图样式 */
+.style-large .card-cover {
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  overflow: hidden;
+}
+
+.style-large .card-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.style-large .cover-placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+.style-large .card-content {
+  padding: 16px;
+}
+
+.style-large .card-title {
+  font-size: 18px;
+}
+
+/* 横向样式 */
+.style-horizontal .card-item {
+  display: flex;
+  flex-direction: row;
+}
+
+.style-horizontal .card-cover {
+  width: 120px;
+  height: 90px;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.style-horizontal .card-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.style-horizontal .cover-placeholder {
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+}
+
+.style-horizontal .card-content {
+  flex: 1;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.style-horizontal.columns-1 {
+  grid-template-columns: 1fr;
+}
+
+/* 通用样式 */
+.card-title {
+  margin: 0 0 6px 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-summary {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: #666;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #999;
+}
+
+.category-tag {
+  font-weight: 500;
+}
+
+.date {
+  color: #999;
+}
+
+.read-time {
+  color: #999;
+}
+
+.read-time::before {
+  content: '·';
+  margin-right: 8px;
+}
