@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
-import { getDefaultAIConfig, createAIService, getAIConfigOrDefault, getAllAIConfigs, getWebSearchAIConfig, getAIConfigByTaskType } from '../services/ai/index';
+import { getDefaultAIConfig, createAIService, getAIConfigOrDefault, getAllAIConfigs, getWebSearchAIConfig, getAIConfigByTaskType } from '../services/ai/index.js';
 import {
   buildTopicDiscussionPrompt,
   buildOutlinePrompt,
@@ -21,10 +21,10 @@ import {
   buildSearchQuery,
   buildDraftPromptWithWebContext,
   STYLE_TEMPLATES,
-} from '../services/article/prompts';
-import { smartImageService } from '../services/article/smartImage';
-import { WORKFLOW_STEPS } from '../services/article/workflow';
-import { generatePoster, ensurePosterDir } from '../services/article/posterGenerator';
+} from '../services/article/prompts.js';
+import { smartImageService } from '../services/article/smartImage.js';
+import { WORKFLOW_STEPS } from '../services/article/workflow.js';
+import { generatePoster, ensurePosterDir } from '../services/article/posterGenerator.js';
 import { loadTemplate, replaceVariables, buildPromptWithTemplate } from '../services/article/templateService.js';
 import { requireAuth } from '../middleware/auth.js';
 

@@ -4,7 +4,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { getDefaultAIConfig, createAIService } from '../ai/index';
+import { getDefaultAIConfig, createAIService } from '../ai/index.js';
 
 const prisma = new PrismaClient();
 

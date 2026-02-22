@@ -4,7 +4,7 @@
 
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { getMonthlyUsage, getPlanLimits } from '../services/usage';
+import { getMonthlyUsage, getPlanLimits } from '../services/usage.js';
 
 const router = Router();
 const prisma = new PrismaClient();

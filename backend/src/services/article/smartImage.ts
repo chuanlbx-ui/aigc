@@ -7,7 +7,7 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuid } from 'uuid';
 import { PrismaClient } from '@prisma/client';
-import { getDefaultAIConfig, createAIService } from '../ai/index';
+import { getDefaultAIConfig, createAIService } from '../ai/index.js';
 import { buildImagePositionPrompt } from './prompts';
 import { imageRelevanceService, ImageWithRelevance } from './imageRelevance';
 import { imageCacheService } from './imageCache';

@@ -6,10 +6,10 @@ import { v4 as uuid } from 'uuid';
 import multer from 'multer';
 import * as cheerio from 'cheerio';
 import archiver from 'archiver';
-import { getDefaultAIConfig, createAIService, getAIConfigOrDefault } from '../services/ai/index';
-import { searchService } from '../services/search';
+import { getDefaultAIConfig, createAIService, getAIConfigOrDefault } from '../services/ai/index.js';
+import { searchService } from '../services/search.js';
 import { requireAuth } from '../middleware/auth.js';
-import { createEmbeddingService, preprocessText, EMBEDDING_DIMENSION } from '../services/embedding';
+import { createEmbeddingService, preprocessText, EMBEDDING_DIMENSION } from '../services/embedding.js';
 // PDF 解析将在运行时动态导入，避免启动时的测试文件问题
 
 const prisma = new PrismaClient();

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { requireApiToken } from '../middleware/apiAuth';
-import { filterContent, getContentByIds, FilterConfig } from '../services/portal/contentFilter';
+import { requireApiToken } from '../middleware/apiAuth.js';
+import { filterContent, getContentByIds, FilterConfig } from '../services/portal/contentFilter.js';
 import fs from 'fs';
 import path from 'path';
 

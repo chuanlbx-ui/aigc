@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { ExtensionBridge } from '../extension/bridge';
+import { ExtensionBridge } from '../extension/bridge.js';
 
 const prisma = new PrismaClient();
 

@@ -5,7 +5,7 @@
 
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { getAllProviders, getProvider, getProviderModels } from '../config/aiModels';
+import { getAllProviders, getProvider, getProviderModels } from '../config/aiModels.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const prisma = new PrismaClient();

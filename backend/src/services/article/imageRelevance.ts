@@ -3,7 +3,7 @@
  * 使用 AI 模型计算图片与关键词的语义相似度
  */
 
-import { getDefaultAIConfig, createAIService } from '../ai/index';
+import { getDefaultAIConfig, createAIService } from '../ai/index.js';
 
 export interface RelevanceScore {
   score: number; // 0-1 之间的相关性分数

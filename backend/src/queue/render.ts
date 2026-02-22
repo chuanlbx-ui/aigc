@@ -3,7 +3,7 @@ import { spawn } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { parseFile } from 'music-metadata';
-import { createQueue, type QueueService } from '../services/queue';
+import { createQueue, type QueueService } from '../services/queue.js';
 
 const prisma = new PrismaClient();
 

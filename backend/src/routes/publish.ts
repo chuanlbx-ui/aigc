@@ -9,9 +9,9 @@ import {
   updatePlatformToken,
   PlatformType,
   PublishContent,
-} from '../services/publish';
-import { SmartPublisher } from '../services/publish/smartPublisher';
-import { ExtensionTaskQueue } from '../services/extension/taskQueue';
+} from '../services/publish.js';
+import { SmartPublisher } from '../services/publish/smartPublisher.js';
+import { ExtensionTaskQueue } from '../services/extension/taskQueue.js';
 
 const prisma = new PrismaClient();
 export const publishRouter = Router();

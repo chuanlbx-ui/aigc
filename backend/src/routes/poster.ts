@@ -2,13 +2,13 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
-import { getDefaultAIConfig, createAIService } from '../services/ai/index';
+import { getDefaultAIConfig, createAIService } from '../services/ai/index.js';
 import {
   buildQuotesPrompt,
   buildPolishQuotePrompt,
   buildGenerateQuotePrompt,
-} from '../services/article/prompts';
-import { generatePoster, ensurePosterDir } from '../services/article/posterGenerator';
+} from '../services/article/prompts.js';
+import { generatePoster, ensurePosterDir } from '../services/article/posterGenerator.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const prisma = new PrismaClient();

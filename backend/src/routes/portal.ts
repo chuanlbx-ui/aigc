@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { filterContent, getContentByIds, getArticleContent, FilterConfig } from '../services/portal/contentFilter';
+import { filterContent, getContentByIds, getArticleContent, FilterConfig } from '../services/portal/contentFilter.js';
 import fs from 'fs';
 import path from 'path';
 

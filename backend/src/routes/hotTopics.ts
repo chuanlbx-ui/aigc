@@ -3,7 +3,7 @@
  */
 
 import { Router } from 'express';
-import { hotTopicService } from '../services/hotTopic/index';
+import { hotTopicService } from '../services/hotTopic/index.js';
 
 const router = Router();
 

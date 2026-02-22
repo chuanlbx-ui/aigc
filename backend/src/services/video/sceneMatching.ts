@@ -3,8 +3,8 @@
  * 将口播文案按句/段拆分，为每段生成视觉描述并匹配素材
  */
 
-import { createAIService, getAIConfigOrDefault, AIServiceConfig } from '../ai/index';
-import { smartImageService } from '../article/smartImage';
+import { createAIService, getAIConfigOrDefault, AIServiceConfig } from '../ai/index.js';
+import { smartImageService } from '../article/smartImage.js';
 
 // 场景片段
 export interface SceneSegment {

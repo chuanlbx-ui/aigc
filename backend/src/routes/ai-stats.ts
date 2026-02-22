@@ -3,7 +3,7 @@
  */
 
 import { Router } from 'express';
-import { getAIStats, getRecentLogs } from '../services/ai-logger';
+import { getAIStats, getRecentLogs } from '../services/ai-logger.js';
 
 const router = Router();
 
