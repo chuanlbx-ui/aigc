@@ -7,7 +7,7 @@ import {
   GenerateOptions,
   GeneratedMedia,
   ProviderInfo,
-} from './base';
+} from './base.js';
 
 interface PexelsPhoto {
   id: number;

@@ -3,7 +3,7 @@
  * 使用第三方API获取微博热搜榜
  */
 
-import { HotTopicFetcher, RawTopic } from './base';
+import { HotTopicFetcher, RawTopic } from './base.js';
 
 export class WeiboFetcher extends HotTopicFetcher {
   private apiUrl: string;

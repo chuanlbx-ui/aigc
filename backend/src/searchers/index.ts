@@ -1,12 +1,12 @@
-import { BaseSearcher } from './base';
-import { PexelsSearcher } from './pexels';
-import { PixabaySearcher } from './pixabay';
-import { UnsplashSearcher } from './unsplash';
-import { FreesoundSearcher } from './freesound';
+import { BaseSearcher } from './base.js';
+import { PexelsSearcher } from './pexels.js';
+import { PixabaySearcher } from './pixabay.js';
+import { UnsplashSearcher } from './unsplash.js';
+import { FreesoundSearcher } from './freesound.js';
 
 // 导出类型
-export * from './types';
-export { BaseSearcher } from './base';
+export * from './types.js';
+export { BaseSearcher } from './base.js';
 
 // 搜索器实例
 const searchers: Map<string, BaseSearcher> = new Map();

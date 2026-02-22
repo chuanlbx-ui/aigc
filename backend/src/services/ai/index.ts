@@ -109,14 +109,14 @@ export async function getAllAIConfigs(): Promise<Array<{
 }
 
 // 导入具体实现
-import { OpenAIService } from './openai';
-import { ClaudeService } from './claude';
-import { DeepSeekService } from './deepseek';
-import { KimiService } from './kimi';
-import { QwenService } from './qwen';
-import { ZhipuService } from './zhipu';
-import { GeminiService } from './gemini';
-import { OpenRouterService } from './openrouter';
+import { OpenAIService } from './openai.js';
+import { ClaudeService } from './claude.js';
+import { DeepSeekService } from './deepseek.js';
+import { KimiService } from './kimi.js';
+import { QwenService } from './qwen.js';
+import { ZhipuService } from './zhipu.js';
+import { GeminiService } from './gemini.js';
+import { OpenRouterService } from './openrouter.js';
 
 // AI 服务工厂
 export function createAIService(config: AIServiceConfig): AIService {

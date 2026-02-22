@@ -3,7 +3,7 @@
  * 使用头条API获取热点新闻
  */
 
-import { HotTopicFetcher, RawTopic } from './base';
+import { HotTopicFetcher, RawTopic } from './base.js';
 
 export class ToutiaoFetcher extends HotTopicFetcher {
   private apiUrl: string;

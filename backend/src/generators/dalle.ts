@@ -8,7 +8,7 @@ import {
   GenerateOptions,
   GeneratedMedia,
   ProviderInfo,
-} from './base';
+} from './base.js';
 
 export class DalleGenerator extends MediaGenerator {
   readonly info: ProviderInfo = {

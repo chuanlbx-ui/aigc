@@ -6,7 +6,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { BUILTIN_LAYOUT_THEMES } from './builtinLayoutThemes';
+import { BUILTIN_LAYOUT_THEMES } from './builtinLayoutThemes.js';
 
 const prisma = new PrismaClient();
 

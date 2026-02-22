@@ -4,7 +4,7 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { getPublisher, getPlatformConfig } from './index';
+import { getPublisher, getPlatformConfig } from './index.js';
 import * as fs from 'fs';
 
 const prisma = new PrismaClient();

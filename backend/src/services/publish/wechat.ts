@@ -1,6 +1,6 @@
 import FormData from 'form-data';
 import axios from 'axios';
-import { BasePublisher } from './base';
+import { BasePublisher } from './base.js';
 import {
   PlatformType,
   ContentType,
@@ -8,7 +8,7 @@ import {
   PublishContent,
   PublishOptions,
   PublishResult,
-} from './types';
+} from './types.js';
 
 export class WechatPublisher extends BasePublisher {
   readonly platformName: PlatformType = 'wechat';

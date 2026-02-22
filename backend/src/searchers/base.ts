@@ -1,4 +1,4 @@
-import { SearchOptions, SearchResponse, SearcherInfo, MediaType } from './types';
+import { SearchOptions, SearchResponse, SearcherInfo, MediaType } from './types.js';
 
 /**
  * 素材搜索器基类

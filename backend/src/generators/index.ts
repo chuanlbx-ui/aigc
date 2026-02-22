@@ -2,25 +2,25 @@
  * 媒体生成器统一导出和工厂方法
  */
 
-export * from './base';
-export { DalleGenerator } from './dalle';
-export { FreeLibraryGenerator } from './free';
-export { StabilityGenerator } from './stability';
-export { TongyiGenerator } from './tongyi';
-export { YigeGenerator } from './yige';
-export { KlingGenerator } from './kling';
-export { RunwayGenerator } from './runway';
-export { PikaGenerator } from './pika';
+export * from './base.js';
+export { DalleGenerator } from './dalle.js';
+export { FreeLibraryGenerator } from './free.js';
+export { StabilityGenerator } from './stability.js';
+export { TongyiGenerator } from './tongyi.js';
+export { YigeGenerator } from './yige.js';
+export { KlingGenerator } from './kling.js';
+export { RunwayGenerator } from './runway.js';
+export { PikaGenerator } from './pika.js';
 
-import { MediaGenerator, ProviderInfo } from './base';
-import { DalleGenerator } from './dalle';
-import { FreeLibraryGenerator } from './free';
-import { StabilityGenerator } from './stability';
-import { TongyiGenerator } from './tongyi';
-import { YigeGenerator } from './yige';
-import { KlingGenerator } from './kling';
-import { RunwayGenerator } from './runway';
-import { PikaGenerator } from './pika';
+import { MediaGenerator, ProviderInfo } from './base.js';
+import { DalleGenerator } from './dalle.js';
+import { FreeLibraryGenerator } from './free.js';
+import { StabilityGenerator } from './stability.js';
+import { TongyiGenerator } from './tongyi.js';
+import { YigeGenerator } from './yige.js';
+import { KlingGenerator } from './kling.js';
+import { RunwayGenerator } from './runway.js';
+import { PikaGenerator } from './pika.js';
 
 // 所有可用的生成器
 const generators: Record<string, MediaGenerator> = {

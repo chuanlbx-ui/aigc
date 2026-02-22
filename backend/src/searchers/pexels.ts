@@ -1,5 +1,5 @@
-import { BaseSearcher } from './base';
-import { SearchOptions, SearchResponse, SearchResult, MediaType } from './types';
+import { BaseSearcher } from './base.js';
+import { SearchOptions, SearchResponse, SearchResult, MediaType } from './types.js';
 
 /**
  * Pexels 搜索器

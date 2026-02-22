@@ -1,4 +1,4 @@
-import { AIService, AIServiceConfig, ChatMessage } from './index';
+import { AIService, AIServiceConfig, ChatMessage } from './index.js';
 
 export class ClaudeService implements AIService {
   private config: AIServiceConfig;

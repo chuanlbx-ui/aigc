@@ -1,4 +1,4 @@
-import { AIService, AIServiceConfig, ChatMessage, ChatWithSearchResponse } from './index';
+import { AIService, AIServiceConfig, ChatMessage, ChatWithSearchResponse } from './index.js';
 
 export class ZhipuService implements AIService {
   private config: AIServiceConfig;

@@ -7,7 +7,7 @@ import {
   GenerateOptions,
   GeneratedMedia,
   ProviderInfo,
-} from './base';
+} from './base.js';
 
 export class RunwayGenerator extends MediaGenerator {
   readonly info: ProviderInfo = {

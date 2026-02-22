@@ -4,7 +4,7 @@
  */
 
 import NodeCache from 'node-cache';
-import { RawTopic } from './fetchers/base';
+import { RawTopic } from './fetchers/base.js';
 
 interface CacheStats {
   hits: number;

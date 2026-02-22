@@ -4,10 +4,10 @@
  */
 
 import { PrismaClient } from '@prisma/client';
-import { WeiboFetcher } from './fetchers/weibo';
-import { ToutiaoFetcher } from './fetchers/toutiao';
-import { hotTopicCacheService } from './cache';
-import { knowledgeMatcherService } from './matcher';
+import { WeiboFetcher } from './fetchers/weibo.js';
+import { ToutiaoFetcher } from './fetchers/toutiao.js';
+import { hotTopicCacheService } from './cache.js';
+import { knowledgeMatcherService } from './matcher.js';
 import { v4 as uuid } from 'uuid';
 
 const prisma = new PrismaClient();

@@ -7,7 +7,7 @@ import {
   GenerateOptions,
   GeneratedMedia,
   ProviderInfo,
-} from './base';
+} from './base.js';
 
 export class StabilityGenerator extends MediaGenerator {
   readonly info: ProviderInfo = {

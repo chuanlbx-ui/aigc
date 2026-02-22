@@ -8,10 +8,10 @@ import fs from 'fs';
 import { v4 as uuid } from 'uuid';
 import { PrismaClient } from '@prisma/client';
 import { getDefaultAIConfig, createAIService } from '../ai/index.js';
-import { buildImagePositionPrompt } from './prompts';
-import { imageRelevanceService, ImageWithRelevance } from './imageRelevance';
-import { imageCacheService } from './imageCache';
-import { TongyiGenerator } from '../../generators/tongyi';
+import { buildImagePositionPrompt } from './prompts.js';
+import { imageRelevanceService, ImageWithRelevance } from './imageRelevance.js';
+import { imageCacheService } from './imageCache.js';
+import { TongyiGenerator } from '../../generators/tongyi.js';
 
 const prisma = new PrismaClient();
 

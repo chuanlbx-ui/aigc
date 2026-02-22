@@ -7,7 +7,7 @@ import {
   PublishContent,
   PublishOptions,
   PublishResult,
-} from './types';
+} from './types.js';
 
 export abstract class BasePublisher implements PublisherService {
   abstract readonly platformName: PlatformType;

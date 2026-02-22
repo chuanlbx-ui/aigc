@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
-import { PublisherService, PlatformType, PlatformConfig } from './types';
-import { WechatPublisher } from './wechat';
+import { PublisherService, PlatformType, PlatformConfig } from './types.js';
+import { WechatPublisher } from './wechat.js';
 
 const prisma = new PrismaClient();
 
@@ -65,4 +65,4 @@ export async function updatePlatformToken(
   });
 }
 
-export * from './types';
+export * from './types.js';
