@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Remotion Publisher",
+  "version": "1.0.0",
+  "description": "多平台内容发布浏览器扩展",
+  "permissions": [
+    "storage",
+    "tabs",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "http://localhost:3001/*",
+    "https://weibo.com/*",
+    "https://www.bilibili.com/*",
+    "https://www.douyin.com/*",
+    "https://www.kuaishou.com/*"
+  ],
+  "background": {
+    "service_worker": "background/index.js"
+  },
+  "action": {
+    "default_popup": "popup/index.html"
+  }
+}

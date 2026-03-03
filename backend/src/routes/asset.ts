@@ -104,11 +104,8 @@ assetRouter.delete('/:id', requireAuth, async (req, res) => {
 // 获取素材文件（支持 Range 请求，用于视频 seek）
 // 注意：这个路由不使用 requireAuth 中间件，而是手动验证 token
 assetRouter.get('/file/:id', async (req, res) => {
-  // 从 header 或 query 参数获取 token
-  let token = req.headers.authorization?.replace('Bearer ', '');
-  if (!token && req.query.token) {
-    token = req.query.token as string;
-  }
+  // 只从 Authorization header 获取 token，移除 query 参数支持以防止认证绕过
+  const token = req.headers.authorization?.replace('Bearer ', '');
 
   if (!token) {
     return res.status(401).json({ error: '未提供认证令牌' });

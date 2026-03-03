@@ -9,7 +9,11 @@ import jwt from 'jsonwebtoken';
 const prisma = new PrismaClient();
 
 // JWT 配置
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+// 启动时检查 JWT_SECRET，未设置则拒绝启动
+if (!process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET 环境变量未设置，请在 .env 文件中配置');
+}
+const JWT_SECRET = process.env.JWT_SECRET;
 const ACCESS_TOKEN_EXPIRES = '15m';  // 15分钟
 const REFRESH_TOKEN_EXPIRES = '7d';  // 7天
 
@@ -20,6 +24,23 @@ interface TokenPayload {
   role: string;
   tenantId?: string | null;
   type: 'access' | 'refresh';
+}
+
+// 密码强度验证
+export function validatePasswordStrength(password: string): { valid: boolean; error?: string } {
+  if (password.length < 8) {
+    return { valid: false, error: '密码长度至少为8位' };
+  }
+  if (!/[A-Z]/.test(password)) {
+    return { valid: false, error: '密码必须包含至少一个大写字母' };
+  }
+  if (!/[a-z]/.test(password)) {
+    return { valid: false, error: '密码必须包含至少一个小写字母' };
+  }
+  if (!/[0-9]/.test(password)) {
+    return { valid: false, error: '密码必须包含至少一个数字' };
+  }
+  return { valid: true };
 }
 
 // 密码哈希

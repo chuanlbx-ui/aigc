@@ -45,3 +45,24 @@ deploy/ssl/*.pem
 
 # Docker 相关（可选）
 .docker/
+
+# 环境变量扩展（生产/远程）
+.env.remote
+backend/.env.remote
+backend/.env.local
+
+# 数据库备份
+backend/data-export/
+backend/*.sql
+database-backup/
+
+# 测试脚本
+backend/test-*.js
+backend/test/
+
+# 无效文件
+backend/nul
+nul
+
+# Claude 本地配置
+.claude/
