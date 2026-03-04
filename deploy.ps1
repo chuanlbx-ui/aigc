@@ -60,39 +60,7 @@ Write-Host "`n🖥️  [2/3] 连接服务器执行部署..." -ForegroundColor Cy
 $sshTarget = "${ServerUser}@${ServerIP}"
 $sshPortParam = if ($SSHPort -ne 22) { @("-p", "$SSHPort") } else { @() }
 
-$remoteScript = @"
-set -e
-cd ${RemoteBase}
-
-echo "📥 拉取最新代码..."
-git pull origin main
-
-echo ""
-echo "📦 安装后端依赖..."
-cd backend
-npm install --production
-
-echo ""
-echo "🛠️  生成 Prisma 客户端..."
-npx prisma generate
-
-echo ""
-echo "🏗️  构建后端..."
-npm run build
-
-echo ""
-echo "🔄 重启 PM2 服务..."
-if pm2 list | grep -q remotion-backend; then
-    pm2 restart remotion-backend
-else
-    pm2 start dist/index.js --name remotion-backend
-fi
-pm2 save
-
-echo ""
-echo "✅ 服务器部署完成！"
-pm2 list | grep remotion-backend
-"@
+$remoteScript = "set -e; cd ${RemoteBase}; echo '📥 拉取最新代码...'; git pull origin main; echo '📦 安装后端依赖...'; cd backend; npm install --production; echo '🛠️ 生成 Prisma 客户端...'; npx prisma generate; echo '🏗️ 构建后端...'; npm run build; echo '🔄 重启 PM2 服务...'; if pm2 list | grep -q remotion-backend; then pm2 restart remotion-backend; else pm2 start dist/index.js --name remotion-backend; fi; pm2 save; echo '✅ 服务器部署完成！'; pm2 list | grep remotion-backend"
 
 ssh @sshPortParam $sshTarget $remoteScript
 
