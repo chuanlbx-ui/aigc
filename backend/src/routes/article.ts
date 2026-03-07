@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
 import { getDefaultAIConfig, createAIService, getAIConfigOrDefault, getAllAIConfigs, getWebSearchAIConfig, getAIConfigByTaskType } from '../services/ai/index.js';
+import { createEmbeddingService, preprocessText } from '../services/embedding.js';
 import {
   buildTopicDiscussionPrompt,
   buildOutlinePrompt,
@@ -20,12 +21,15 @@ import {
   isNewsContent,
   buildSearchQuery,
   buildDraftPromptWithWebContext,
+  buildDraftPromptWithContext,
+  buildAdaptPrompt,
   STYLE_TEMPLATES,
 } from '../services/article/prompts.js';
 import { smartImageService } from '../services/article/smartImage.js';
-import { WORKFLOW_STEPS } from '../services/article/workflow.js';
+import { WORKFLOW_STEPS, buildWorkflowContext, hasStyleAnalysis } from '../services/article/workflow.js';
 import { generatePoster, ensurePosterDir } from '../services/article/posterGenerator.js';
 import { loadTemplate, replaceVariables, buildPromptWithTemplate } from '../services/article/templateService.js';
+import { performQualityCheck, quickQualityCheck } from '../services/article/qualityGate.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const prisma = new PrismaClient();
@@ -1007,10 +1011,15 @@ articleRouter.post('/ai/outline', async (req, res) => {
   }
 });
 
-// 初稿生成（支持时事类自动联网搜索）
+// 初稿生成（支持工作流上下文智能传递）
 articleRouter.post('/ai/draft', async (req, res) => {
   try {
-    const { title, platform, column, outline, materials, serviceId, templateId } = req.body;
+    const { 
+      title, platform, column, outline, materials, 
+      serviceId, templateId,
+      // 新增：工作流上下文
+      workflowContext 
+    } = req.body;
     if (!title || !platform || !column || !outline) {
       return res.status(400).json({ error: '缺少必要参数' });
     }
@@ -1022,9 +1031,24 @@ articleRouter.post('/ai/draft', async (req, res) => {
 
     let prompt;
     let webSearchUsed = false;
+    let contextUsed = false;
 
+    // 优先使用工作流上下文（包含选题分析、风格学习等）
+    if (workflowContext && (workflowContext.topicAnalysis || workflowContext.styleAnalysis)) {
+      prompt = buildDraftPromptWithContext({
+        title, platform, column, outline,
+        context: {
+          topicAnalysis: workflowContext.topicAnalysis,
+          styleAnalysis: workflowContext.styleAnalysis,
+          materials: materials || workflowContext.materials,
+          webSearchContent: workflowContext.webSearchContent,
+          understanding: workflowContext.understanding,
+        },
+      });
+      contextUsed = true;
+    }
     // 时事检测：如果是时事类内容，先联网搜索获取最新信息
-    if (!templateId && isNewsContent(title, outline)) {
+    else if (!templateId && isNewsContent(title, outline)) {
       const searchConfig = await getWebSearchAIConfig();
       if (searchConfig) {
         try {
@@ -1062,7 +1086,7 @@ articleRouter.post('/ai/draft', async (req, res) => {
     const service = createAIService(config);
     const result = await service.generateContent(prompt);
 
-    res.json({ draft: result, webSearchUsed });
+    res.json({ draft: result, webSearchUsed, contextUsed });
   } catch (error: any) {
     res.status(500).json({ error: error.message || '初稿生成失败' });
   }
@@ -1174,7 +1198,148 @@ articleRouter.post('/ai/hkr-improve', async (req, res) => {
   }
 });
 
-// 搜索知识库素材
+// 发布前质量检查
+articleRouter.post('/ai/quality-check', async (req, res) => {
+  try {
+    const { content, platform, column, articleId } = req.body;
+    if (!content) {
+      return res.status(400).json({ error: '请提供文章内容' });
+    }
+    if (!platform || !column) {
+      return res.status(400).json({ error: '请提供平台和栏目信息' });
+    }
+
+    // 获取文章工作流数据和 HKR 评分
+    let workflowData: any = {};
+    let hkrScore: any = null;
+
+    if (articleId) {
+      const article = await prisma.article.findFirst({
+        where: { id: articleId, userId: req.user!.id },
+      });
+      if (article) {
+        workflowData = JSON.parse(article.workflowData || '{}');
+        hkrScore = article.hkrScore ? JSON.parse(article.hkrScore) : null;
+      }
+    }
+
+    // 执行质量检查
+    const result = performQualityCheck({
+      content,
+      platform,
+      column,
+      workflowData,
+      hkrScore,
+    });
+
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || '质量检查失败' });
+  }
+});
+
+// 快速质量检查（仅检查关键项）
+articleRouter.post('/ai/quick-quality-check', async (req, res) => {
+  try {
+    const { content } = req.body;
+    if (!content) {
+      return res.status(400).json({ error: '请提供文章内容' });
+    }
+
+    const result = quickQualityCheck(content);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || '质量检查失败' });
+  }
+});
+
+// ========== 内容去重与相似度检测 ==========
+
+// 检查内容相似度
+articleRouter.post('/ai/check-similarity', async (req, res) => {
+  try {
+    const { title, content, excludeId } = req.body;
+    if (!title) {
+      return res.status(400).json({ error: '请提供文章标题' });
+    }
+
+    const { checkSimilarity } = await import('../services/article/dedup.js');
+    const result = await checkSimilarity(title, content || '', excludeId);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || '相似度检测失败' });
+  }
+});
+
+// 检查选题相似度
+articleRouter.post('/ai/check-topic-similarity', async (req, res) => {
+  try {
+    const { topic, excludeId } = req.body;
+    if (!topic) {
+      return res.status(400).json({ error: '请提供选题' });
+    }
+
+    const { checkTopicSimilarity } = await import('../services/article/dedup.js');
+    const result = await checkTopicSimilarity(topic, excludeId);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || '选题相似度检测失败' });
+  }
+});
+
+// 为文章生成向量
+articleRouter.post('/:id/embed', async (req, res) => {
+  try {
+    const article = await prisma.article.findFirst({
+      where: { id: req.params.id, userId: req.user!.id },
+    });
+    if (!article) {
+      return res.status(404).json({ error: '文章不存在' });
+    }
+
+    const fs = await import('fs');
+    let content = '';
+    if (fs.existsSync(article.filePath)) {
+      content = fs.readFileSync(article.filePath, 'utf-8');
+    }
+
+    const { computeArticleEmbedding, saveArticleEmbedding } = await import('../services/article/dedup.js');
+    const embedding = await computeArticleEmbedding(article.id, article.title, content);
+
+    if (!embedding) {
+      return res.status(400).json({ error: '向量服务不可用' });
+    }
+
+    await saveArticleEmbedding(article.id, embedding);
+    res.json({ success: true, dimension: embedding.length });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || '向量化失败' });
+  }
+});
+
+// 批量文章向量化
+articleRouter.post('/batch-embed', async (req, res) => {
+  try {
+    const { batchEmbedArticles } = await import('../services/article/dedup.js');
+    const result = await batchEmbedArticles(50);
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || '批量向量化失败' });
+  }
+});
+
+// 获取向量化状态
+articleRouter.get('/embed-status', async (req, res) => {
+  try {
+    const { getEmbeddingStatus } = await import('../services/article/dedup.js');
+    const status = await getEmbeddingStatus();
+    res.json(status);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || '获取状态失败' });
+  }
+});
+
+// 搜索知识库素材（向量语义搜索优先）
 articleRouter.post('/ai/search-knowledge', async (req, res) => {
   try {
     const { query, limit = 10 } = req.body;
@@ -1182,36 +1347,84 @@ articleRouter.post('/ai/search-knowledge', async (req, res) => {
       return res.status(400).json({ error: '请提供搜索关键词' });
     }
 
-    // 搜索知识库文档
-    const docs = await prisma.knowledgeDoc.findMany({
-      where: {
-        OR: [
-          { title: { contains: query } },
-          { summary: { contains: query } },
-          { tags: { contains: query } },
-        ],
-      },
-      select: {
-        id: true,
-        title: true,
-        summary: true,
-        tags: true,
-        filePath: true,
-      },
-      take: limit,
-    });
+    let results: any[] = [];
+    let searchMode = 'text'; // 默认文本搜索
 
-    // 读取部分内容作为摘要
-    const results = docs.map(doc => {
-      let excerpt = doc.summary || '';
-      if (fs.existsSync(doc.filePath)) {
-        const content = fs.readFileSync(doc.filePath, 'utf-8');
-        excerpt = content.substring(0, 500);
+    // 尝试向量语义搜索
+    const embeddingService = await createEmbeddingService();
+    if (embeddingService) {
+      try {
+        // 生成查询向量
+        const queryEmbedding = await embeddingService.embed(query);
+        
+        // 使用 pgvector 进行相似度搜索
+        const vectorResults = await prisma.$queryRaw<any[]>`
+          SELECT id, title, summary, tags, "filePath",
+                 1 - (embedding <=> ${queryEmbedding}::vector) as similarity
+          FROM "KnowledgeDoc"
+          WHERE "userId" = ${req.user!.id}
+            AND embedding IS NOT NULL
+          ORDER BY embedding <=> ${queryEmbedding}::vector
+          LIMIT ${limit}
+        `;
+
+        if (vectorResults.length > 0) {
+          results = vectorResults.map(doc => {
+            let excerpt = doc.summary || '';
+            const docPath = doc.filePath?.replace(/\\/g, '/');
+            if (docPath && fs.existsSync(docPath)) {
+              const content = fs.readFileSync(docPath, 'utf-8');
+              excerpt = content.substring(0, 500);
+            }
+            return {
+              id: doc.id,
+              title: doc.title,
+              summary: doc.summary,
+              tags: doc.tags,
+              filePath: doc.filePath,
+              excerpt,
+              similarity: doc.similarity,
+            };
+          });
+          searchMode = 'vector';
+        }
+      } catch (vectorError) {
+        console.warn('向量搜索失败，回退到文本搜索:', vectorError);
       }
-      return { ...doc, excerpt };
-    });
+    }
 
-    res.json({ results });
+    // 回退到文本搜索（当向量搜索不可用或无结果时）
+    if (results.length === 0) {
+      const docs = await prisma.knowledgeDoc.findMany({
+        where: {
+          userId: req.user!.id,
+          OR: [
+            { title: { contains: query } },
+            { summary: { contains: query } },
+            { tags: { contains: query } },
+          ],
+        },
+        select: {
+          id: true,
+          title: true,
+          summary: true,
+          tags: true,
+          filePath: true,
+        },
+        take: limit,
+      });
+
+      results = docs.map(doc => {
+        let excerpt = doc.summary || '';
+        if (doc.filePath && fs.existsSync(doc.filePath)) {
+          const content = fs.readFileSync(doc.filePath, 'utf-8');
+          excerpt = content.substring(0, 500);
+        }
+        return { ...doc, excerpt };
+      });
+    }
+
+    res.json({ results, searchMode });
   } catch (error: any) {
     res.status(500).json({ error: error.message || '搜索失败' });
   }
@@ -1764,5 +1977,154 @@ articleRouter.post('/ai/styled-draft', async (req, res) => {
   } catch (error: any) {
     console.error('风格化初稿生成失败:', error);
     res.status(500).json({ error: error.message || '生成失败' });
+  }
+});
+
+// ========== 内容效果数据 API ==========
+
+// 获取文章效果数据
+articleRouter.get('/:id/metrics', async (req, res) => {
+  try {
+    const { days = '30' } = req.query;
+    const { getMetricsHistory, getMetricsSummary } = await import('../services/publish/metrics.js');
+    
+    const history = await getMetricsHistory(req.params.id, parseInt(days as string));
+    const summary = await getMetricsSummary(req.params.id);
+    
+    res.json({ history, summary });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || '获取效果数据失败' });
+  }
+});
+
+// 记录效果数据（用于浏览器扩展上报）
+articleRouter.post('/:id/metrics', async (req, res) => {
+  try {
+    const { platform, platformPostId, ...metricsData } = req.body;
+    
+    if (!platform) {
+      return res.status(400).json({ error: '请提供平台信息' });
+    }
+    
+    const { recordMetrics } = await import('../services/publish/metrics.js');
+    await recordMetrics(req.params.id, platform, metricsData, platformPostId);
+    
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || '记录效果数据失败' });
+  }
+});
+
+// 获取高表现内容
+articleRouter.get('/top-performing', async (req, res) => {
+  try {
+    const { platform, limit = '10', days = '30' } = req.query;
+    const { getTopPerformingContent } = await import('../services/publish/metrics.js');
+    
+    const results = await getTopPerformingContent(
+      platform as string,
+      parseInt(limit as string),
+      parseInt(days as string)
+    );
+    
+    res.json({ results });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || '获取高表现内容失败' });
+  }
+});
+
+// ========== SEO/算法优化分析 API ==========
+
+// SEO 分析（快速，无需 AI）
+articleRouter.post('/ai/seo-analysis', async (req, res) => {
+  try {
+    const { title, content, platform = 'wechat' } = req.body;
+    if (!content) {
+      return res.status(400).json({ error: '请提供文章内容' });
+    }
+    
+    const { analyzeSEO } = await import('../services/article/seoAnalyzer.js');
+    const result = analyzeSEO(title || '', content, platform);
+    
+    res.json(result);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || 'SEO分析失败' });
+  }
+});
+
+// AI 驱动的 SEO 分析（深度分析）
+articleRouter.post('/ai/seo-deep-analysis', async (req, res) => {
+  try {
+    const { title, content, platform = 'wechat', serviceId } = req.body;
+    if (!content) {
+      return res.status(400).json({ error: '请提供文章内容' });
+    }
+    
+    const config = await getAIConfigOrDefault(serviceId);
+    if (!config) {
+      return res.status(400).json({ error: '请先配置 AI 服务' });
+    }
+    
+    const { buildSEOAnalysisPrompt } = await import('../services/article/seoAnalyzer.js');
+    const prompt = buildSEOAnalysisPrompt(content, title || '', platform);
+    
+    const service = createAIService(config);
+    const result = await service.generateContent(prompt);
+    
+    // 尝试解析 JSON
+    try {
+      const jsonMatch = result.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const analysis = JSON.parse(jsonMatch[0]);
+        res.json(analysis);
+        return;
+      }
+    } catch {}
+    
+    res.json({ raw: result });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || '深度SEO分析失败' });
+  }
+});
+
+// ========== 内容多平台改编 API ==========
+
+// 内容改编（一稿多用）
+articleRouter.post('/ai/adapt', async (req, res) => {
+  try {
+    const { 
+      title, 
+      content, 
+      sourcePlatform, 
+      targetPlatform, 
+      targetColumn,
+      adaptType = 'full',
+      serviceId 
+    } = req.body;
+    
+    if (!content || !targetPlatform) {
+      return res.status(400).json({ error: '请提供内容和目标平台' });
+    }
+    
+    const config = await getAIConfigOrDefault(serviceId);
+    if (!config) {
+      return res.status(400).json({ error: '请先配置 AI 服务' });
+    }
+    
+    const prompt = buildAdaptPrompt({
+      title: title || '',
+      content,
+      sourcePlatform: sourcePlatform || 'wechat',
+      targetPlatform,
+      targetColumn,
+      adaptType,
+    });
+    
+    const service = createAIService(config);
+    const adaptedContent = await service.generateContent(prompt);
+    
+    res.json({ content: adaptedContent });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || '内容改编失败' });
   }
 });

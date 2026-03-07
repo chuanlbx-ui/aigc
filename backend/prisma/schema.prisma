@@ -214,6 +214,10 @@ model Article {
   aiReviewStatus  String   @default("pending")    // pending | passed | needs_revision
   layoutTheme     String   @default("default")    // 排版主题ID
 
+  // 内容向量（用于相似度检测）
+  embedding       Unsupported("vector(1536)")?
+  embeddedAt      DateTime?
+
   wordCount       Int      @default(0)
   readTime        Int      @default(0)
   viewCount       Int      @default(0)
@@ -228,6 +232,7 @@ model Article {
   updatedAt       DateTime @updatedAt
 
   posters         Poster[]
+  metrics         ContentMetrics[]
 }
 
 // 文章分类
@@ -649,6 +654,8 @@ model PublishRecord {
   updatedAt       DateTime  @updatedAt
   publishedAt     DateTime?
 
+  metrics         ContentMetrics[]
+
   @@index([contentType, contentId])
   @@index([platformId])
   @@index([status])
@@ -676,6 +683,49 @@ model PublishBatch {
   tenantId      String?
   createdAt     DateTime  @default(now())
   completedAt   DateTime?
+}
+
+// 内容效果数据（发布后数据反馈）
+model ContentMetrics {
+  id              String   @id @default(uuid())
+
+  // 关联内容
+  articleId       String?
+  article         Article? @relation(fields: [articleId], references: [id])
+  publishRecordId String?
+  publishRecord   PublishRecord? @relation(fields: [publishRecordId], references: [id])
+
+  // 平台信息
+  platform        String                          // wechat | xiaohongshu | toutiao | zhihu
+  platformPostId  String?                         // 平台文章ID
+
+  // 基础指标
+  viewCount       Int      @default(0)            // 阅读量
+  likeCount       Int      @default(0)            // 点赞数
+  commentCount    Int      @default(0)            // 评论数
+  shareCount      Int      @default(0)            // 分享数
+  collectCount    Int      @default(0)            // 收藏数
+
+  // 进阶指标
+  avgReadTime     Float?                          // 平均阅读时长（秒）
+  readCompletion  Float?                          // 阅读完成率（0-1）
+  clickRate       Float?                          // 点击率（0-1）
+  engagementRate  Float?                          // 互动率（0-1）
+
+  // 转化指标
+  followCount     Int      @default(0)            // 新增关注数
+  forwardCount    Int      @default(0)            // 转发数
+
+  // 数据采集时间
+  fetchedAt       DateTime @default(now())
+  metricsDate     DateTime                        // 数据日期（用于统计）
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([articleId, platform, metricsDate])
+  @@index([articleId])
+  @@index([platform, metricsDate])
 }
 
 // ========== 浏览器扩展发布系统 ==========

@@ -104,6 +104,13 @@ export default function WorkflowPanel({
   const [optimizeInstruction, setOptimizeInstruction] = useState('');
   const [optimizing, setOptimizing] = useState(false);
 
+  // 质量检查相关状态
+  const [qualityResult, setQualityResult] = useState<any>(null);
+  const [qualityChecking, setQualityChecking] = useState(false);
+
+  // 相似度检测相关状态
+  const [similarityResult, setSimilarityResult] = useState<any>(null);
+
   // 新增步骤的状态
   const [understandingNotes, setUnderstandingNotes] = useState(workflowData.understanding?.notes || '');
   const [searchInfo, setSearchInfo] = useState(workflowData.search?.content || '');
@@ -182,6 +189,21 @@ export default function WorkflowPanel({
     setStepLoading('topic', true);
     setCurrentStep(2); // 选题讨论是第3步（索引2）
     try {
+      // 先检查选题相似度
+      const similarityRes = await api.post('/articles/ai/check-topic-similarity', {
+        topic: topicInput,
+        excludeId: article.id,
+      });
+      
+      if (similarityRes.data.hasSimilar) {
+        setSimilarityResult(similarityRes.data);
+        if (similarityRes.data.results?.some((r: any) => r.level === 'high')) {
+          message.warning('发现相似选题，可能已写过类似内容');
+        }
+      } else {
+        setSimilarityResult(null);
+      }
+
       const res = await api.post('/articles/ai/topic-discussion', {
         topic: topicInput,
         platform: article.platform,
@@ -295,6 +317,16 @@ export default function WorkflowPanel({
         .map(m => `【${m.title}】\n${m.excerpt}`)
         .join('\n\n');
       const allMaterials = [knowledgeMaterials, webSearchContent].filter(Boolean).join('\n\n---\n\n');
+
+      // 构建工作流上下文
+      const workflowContext = {
+        topicAnalysis: topicResult || undefined,
+        styleAnalysis: styleAnalysis || undefined,
+        materials: allMaterials || undefined,
+        webSearchContent: webSearchContent || undefined,
+        understanding: understandingNotes || undefined,
+      };
+
       const res = await api.post('/articles/ai/draft', {
         title: article.title,
         platform: article.platform,
@@ -303,6 +335,8 @@ export default function WorkflowPanel({
         materials: allMaterials || undefined,
         serviceId: selectedServiceId,
         templateId: article.templateId,
+        // 传递工作流上下文
+        workflowContext,
       });
       onContentChange(res.data.draft);
 
@@ -318,7 +352,12 @@ export default function WorkflowPanel({
         },
       });
 
-      message.success('初稿生成完成，已填入编辑器');
+      // 显示上下文使用提示
+      if (res.data.contextUsed) {
+        message.success('初稿生成完成（已利用选题分析和风格学习结果）');
+      } else {
+        message.success('初稿生成完成，已填入编辑器');
+      }
     } catch (error: any) {
       message.error(error.response?.data?.error || '生成失败');
     } finally {
@@ -439,6 +478,34 @@ export default function WorkflowPanel({
       message.error(error.response?.data?.error || '优化失败');
     } finally {
       setOptimizing(false);
+    }
+  };
+
+  // 发布前质量检查
+  const handleQualityCheck = async () => {
+    if (!content.trim()) {
+      message.warning('请先编写文章内容');
+      return;
+    }
+    setQualityChecking(true);
+    try {
+      const res = await api.post('/articles/ai/quality-check', {
+        content,
+        platform: article.platform,
+        column: article.column,
+        articleId: article.id,
+      });
+      setQualityResult(res.data);
+
+      if (res.data.passed) {
+        message.success('质量检查通过');
+      } else {
+        message.warning('质量检查未通过，请查看详情');
+      }
+    } catch (error: any) {
+      message.error(error.response?.data?.error || '质量检查失败');
+    } finally {
+      setQualityChecking(false);
     }
   };
 
@@ -895,6 +962,43 @@ export default function WorkflowPanel({
           {reviewResult && (
             <Card size="small" style={{ background: '#fff7e6' }}>
               <pre style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{reviewResult}</pre>
+            </Card>
+          )}
+          <Divider style={{ margin: '12px 0' }} />
+          <div style={{ fontWeight: 500 }}>发布前质量检查</div>
+          <div style={{ color: '#666', fontSize: 12 }}>
+            检查 AI 味关键词、字数、配图、工作流完成度等
+          </div>
+          <Button
+            onClick={handleQualityCheck}
+            loading={qualityChecking}
+            disabled={!content.trim()}
+          >
+            质量检查
+          </Button>
+          {qualityResult && (
+            <Card size="small" style={{ background: qualityResult.passed ? '#f6ffed' : '#fff2f0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+                {qualityResult.passed ? (
+                  <Tag color="success">通过</Tag>
+                ) : (
+                  <Tag color="error">未通过</Tag>
+                )}
+                <span style={{ marginLeft: 8, fontWeight: 500 }}>评分：{qualityResult.score}/100</span>
+              </div>
+              <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+                {qualityResult.overallComment}
+              </div>
+              {qualityResult.suggestions.length > 0 && (
+                <div>
+                  <div style={{ fontWeight: 500, marginBottom: 4 }}>改进建议：</div>
+                  <ul style={{ margin: 0, paddingLeft: 20, fontSize: 12 }}>
+                    {qualityResult.suggestions.map((s: string, i: number) => (
+                      <li key={i}>{s}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </Card>
           )}
         </Space>

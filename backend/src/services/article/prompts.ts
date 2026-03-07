@@ -729,3 +729,153 @@ ${params.webSearchContext}
 
 请输出完整的 Markdown 格式文章。`;
 }
+
+/** 构建带完整工作流上下文的初稿 prompt */
+export function buildDraftPromptWithContext(params: {
+  title: string;
+  platform: string;
+  column: string;
+  outline: string;
+  context: {
+    topicAnalysis?: string;
+    styleAnalysis?: any;
+    materials?: string;
+    webSearchContent?: string;
+    understanding?: string;
+  };
+}): string {
+  const style = COLUMN_STYLES[params.platform]?.[params.column] || '';
+
+  const contextParts: string[] = [];
+
+  // 写作目标
+  if (params.context.understanding) {
+    contextParts.push(`## 写作目标\n${params.context.understanding}`);
+  }
+
+  // 选题分析
+  if (params.context.topicAnalysis) {
+    contextParts.push(`## 选题分析（请参考此分析确定切入角度）\n${params.context.topicAnalysis}`);
+  }
+
+  // 风格要求
+  if (params.context.styleAnalysis) {
+    const styleInfo = typeof params.context.styleAnalysis === 'string'
+      ? params.context.styleAnalysis
+      : JSON.stringify(params.context.styleAnalysis, null, 2);
+    contextParts.push(`## 风格要求（请严格模仿此风格）\n${styleInfo}`);
+  }
+
+  // 参考素材
+  if (params.context.materials) {
+    contextParts.push(`## 参考素材（可引用其中的数据和案例）\n${params.context.materials}`);
+  }
+
+  // 网络搜索结果
+  if (params.context.webSearchContent) {
+    contextParts.push(`## 最新信息（联网搜索结果）\n${params.context.webSearchContent}`);
+  }
+
+  return `请根据大纲撰写文章初稿。
+
+## 文章信息
+- 标题：${params.title}
+- 平台：${params.platform}
+- 栏目：${params.column}
+- 默认风格要求：${style}
+
+## 大纲
+${params.outline}
+
+${contextParts.length > 0 ? contextParts.join('\n\n---\n\n') : ''}
+
+## 写作要求
+1. 严格按照大纲结构展开
+2. 充分利用上方「选题分析」中的切入角度
+3. 如有风格要求，请严格模仿其语言风格
+4. 引用素材中的数据和案例时保持准确
+5. 语言自然流畅，避免AI腔调
+6. 开头要有吸引力，能抓住读者
+
+请输出完整的 Markdown 格式文章。`;
+}
+
+/** 构建内容改编 prompt（一稿多用） */
+export function buildAdaptPrompt(params: {
+  content: string;
+  title: string;
+  sourcePlatform: string;
+  targetPlatform: string;
+  targetColumn?: string;
+  adaptType?: 'full' | 'summary' | 'expand';
+}): string {
+  const targetStyle = COLUMN_STYLES[params.targetPlatform]?.[params.targetColumn || ''] || '';
+  const sourceStyle = COLUMN_STYLES[params.sourcePlatform]?.[''] || '';
+
+  const adaptTypeDesc: Record<string, string> = {
+    full: '完整改编：保留核心内容，调整风格和格式',
+    summary: '精简改编：提取核心要点，压缩篇幅',
+    expand: '扩展改编：补充细节，增加深度',
+  };
+
+  // 平台特定的改编要求
+  const platformRequirements: Record<string, string> = {
+    xiaohongshu: `
+- 标题控制在10-18字，加入emoji
+- 正文使用分段+emoji，营造氛围感
+- 添加3-5个话题标签（#标签）
+- 结尾添加互动引导（如：你喜欢哪个？评论区告诉我~）
+- 强调真实体验和个人感受
+`,
+    wechat: `
+- 标题20-35字，可以设置悬念或提出问题
+- 开头3秒内抓住读者注意力
+- 段落分明，每段不超过150字
+- 配图建议3-5张
+- 文末可以添加作者介绍或延伸阅读
+`,
+    toutiao: `
+- 标题15-25字，包含数字或疑问词
+- 开头直接点题，快速切入
+- 内容结构清晰，使用小标题
+- 文末添加关注引导
+- 可适当增加热点关联
+`,
+    zhihu: `
+- 标题以问题形式呈现更佳
+- 开头可以用故事或案例引入
+- 论证要有逻辑，引用权威来源
+- 使用小标题组织内容
+- 文末可以总结观点或引发讨论
+`,
+  };
+
+  return `请将以下${params.sourcePlatform}平台的内容改编为适合${params.targetPlatform}平台的内容。
+
+## 原始内容
+标题：${params.title}
+
+${params.content}
+
+## 改编要求
+
+### 改编类型
+${adaptTypeDesc[params.adaptType || 'full']}
+
+### 目标平台特点
+平台：${params.targetPlatform}
+${params.targetColumn ? `栏目：${params.targetColumn}` : ''}
+风格要求：${targetStyle}
+
+### 平台特定要求
+${platformRequirements[params.targetPlatform] || '保持原有风格，调整格式'}
+
+## 输出要求
+1. 输出改编后的完整内容（Markdown格式）
+2. 包含新标题
+3. 保留原文的核心信息和价值
+4. 调整语言风格以适应目标平台
+5. 不要添加"改编自..."等说明
+
+请直接输出改编后的内容：`;
+}
