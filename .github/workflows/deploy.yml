@@ -21,17 +21,28 @@ jobs:
           port: 22
           script: |
             set -e
-            cd /www/wwwroot/aigc.wenbita.cn
+            PROJECT_DIR="/www/wwwroot/aigc.wenbita.cn"
+            BACKEND_DIR="$PROJECT_DIR/backend"
+            FRONTEND_DIR="$PROJECT_DIR/frontend"
+
+            cd "$PROJECT_DIR"
 
             echo "📥 拉取最新代码..."
             git pull origin main
 
+            # ========== 后端部署 ==========
+            echo ""
+            echo "========== 后端部署 =========="
+
             echo "📦 安装后端依赖..."
-            cd backend
+            cd "$BACKEND_DIR"
             npm install --production
 
             echo "🛠️ 生成 Prisma 客户端..."
             npx prisma generate
+
+            echo "🗄️ 同步数据库结构..."
+            npx prisma db push --skip-generate
 
             echo "🏗️ 构建后端..."
             npm run build
@@ -42,6 +53,21 @@ jobs:
             else
               pm2 start dist/index.js --name remotion-backend
             fi
-            pm2 save
+
+            # ========== 前端部署 ==========
+            echo ""
+            echo "========== 前端部署 =========="
+
+            echo "📦 安装前端依赖..."
+            cd "$FRONTEND_DIR"
+            npm install
+
+            echo "🏗️ 构建前端..."
+            npm run build
+
+            echo "📤 复制前端构建文件到前端目录..."
+            # 删除旧的静态文件并复制新的
+            rm -rf "$FRONTEND_DIR/dist" 2>/dev/null || true
+            cp -r "$FRONTEND_DIR/dist" "$FRONTEND_DIR/"
 
             echo "✅ 部署完成！"

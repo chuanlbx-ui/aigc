@@ -374,7 +374,7 @@ export function analyzeSEO(
  */
 export function buildSEOAnalysisPrompt(content: string, title: string, platform: string): string {
   const config = PLATFORM_SEO_CONFIG[platform as keyof typeof PLATFORM_SEO_CONFIG] || PLATFORM_SEO_CONFIG.wechat;
-  
+
   return `请分析以下文章的SEO和平台算法优化空间，给出具体的改进建议。
 
 ## 文章信息
@@ -423,4 +423,156 @@ ${content.substring(0, 3000)}${content.length > 3000 ? '\n...(内容过长，已
   "overallScore": 75,
   "topPriority": "最优先改进的事项"
 }`;
+}
+
+/**
+ * 关联 SEO 评分与实际发布效果
+ * 分析哪些 SEO 指标与真实阅读量/互动率相关性最高
+ */
+export interface SEOCorrelationResult {
+  platform: string;
+  sampleSize: number;
+  correlations: Array<{
+    metric: string;           // SEO 指标名称
+    avgHighPerform: number;   // 高表现文章的平均值
+    avgLowPerform: number;    // 低表现文章的平均值
+    impact: 'positive' | 'negative' | 'neutral';
+    confidence: 'high' | 'medium' | 'low';
+    recommendation: string;
+  }>;
+  topInsights: string[];
+}
+
+export async function correlateWithMetrics(
+  platform: string,
+  days: number = 60
+): Promise<SEOCorrelationResult> {
+  const { PrismaClient } = await import('@prisma/client');
+  const prisma = new PrismaClient();
+
+  try {
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    // 查询有效果数据的已发布文章
+    const articles = await prisma.$queryRaw<Array<{
+      id: string;
+      title: string;
+      content: string;
+      platform: string;
+      total_views: number;
+      avg_engagement: number;
+    }>>`
+      SELECT
+        a.id, a.title, a.content, a.platform,
+        COALESCE(SUM(m."viewCount"), 0) AS total_views,
+        COALESCE(AVG(m."engagementRate"), 0) AS avg_engagement
+      FROM "Article" a
+      JOIN "ContentMetrics" m ON m."articleId" = a.id
+      WHERE a.platform = ${platform}
+        AND a."publishedAt" >= ${since}
+        AND a.content IS NOT NULL
+      GROUP BY a.id, a.title, a.content, a.platform
+      HAVING SUM(m."viewCount") > 0
+      ORDER BY total_views DESC
+      LIMIT 100
+    `;
+
+    if (articles.length < 6) {
+      return {
+        platform,
+        sampleSize: articles.length,
+        correlations: [],
+        topInsights: ['数据样本不足（需至少6篇有效果数据的文章），暂无相关性分析。'],
+      };
+    }
+
+    // 按阅读量分为高/低表现两组（各取前/后 30%）
+    const sorted = [...articles].sort((a, b) => Number(b.total_views) - Number(a.total_views));
+    const cutoff = Math.floor(sorted.length * 0.3);
+    const highPerform = sorted.slice(0, cutoff);
+    const lowPerform = sorted.slice(sorted.length - cutoff);
+
+    // 对每篇文章计算 SEO 指标
+    function extractMetrics(article: typeof articles[0]) {
+      const seo = analyzeSEO(article.title, article.content, article.platform);
+      return {
+        titleLength: article.title.length,
+        titleScore: seo.title.score,
+        hasNumber: /\d+/.test(article.title) ? 1 : 0,
+        hasQuestion: /[？?]/.test(article.title) ? 1 : 0,
+        keywordInTitle: seo.keywords.filter(k => k.inTitle).length,
+        headingCount: seo.structure.headingCount,
+        imageCount: seo.structure.imageCount,
+        avgParagraphLength: seo.structure.avgParagraphLength,
+        overallSEOScore: seo.overallScore,
+      };
+    }
+
+    const highMetrics = highPerform.map(extractMetrics);
+    const lowMetrics = lowPerform.map(extractMetrics);
+
+    function avg(arr: number[]) {
+      return arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0;
+    }
+
+    const metricKeys: Array<{ key: keyof ReturnType<typeof extractMetrics>; label: string }> = [
+      { key: 'titleScore', label: '标题吸引力评分' },
+      { key: 'titleLength', label: '标题长度' },
+      { key: 'hasNumber', label: '标题含数字' },
+      { key: 'hasQuestion', label: '标题含问句' },
+      { key: 'keywordInTitle', label: '标题关键词数' },
+      { key: 'headingCount', label: '小标题数量' },
+      { key: 'imageCount', label: '配图数量' },
+      { key: 'avgParagraphLength', label: '平均段落长度' },
+      { key: 'overallSEOScore', label: 'SEO 综合评分' },
+    ];
+
+    const correlations: SEOCorrelationResult['correlations'] = metricKeys.map(({ key, label }) => {
+      const highAvg = avg(highMetrics.map(m => Number(m[key])));
+      const lowAvg = avg(lowMetrics.map(m => Number(m[key])));
+      const diff = highAvg - lowAvg;
+      const relDiff = lowAvg !== 0 ? Math.abs(diff) / lowAvg : 0;
+
+      const impact: 'positive' | 'negative' | 'neutral' =
+        relDiff < 0.1 ? 'neutral' : diff > 0 ? 'positive' : 'negative';
+      const confidence: 'high' | 'medium' | 'low' =
+        relDiff > 0.3 ? 'high' : relDiff > 0.15 ? 'medium' : 'low';
+
+      let recommendation = '';
+      if (impact === 'positive' && confidence !== 'low') {
+        recommendation = `高表现文章此指标平均 ${highAvg.toFixed(1)}，建议提升至此水平`;
+      } else if (impact === 'negative' && confidence !== 'low') {
+        recommendation = `高表现文章此指标平均 ${highAvg.toFixed(1)}，当前过高可适当降低`;
+      } else {
+        recommendation = '与表现相关性不显著，可按平台规范执行';
+      }
+
+      return {
+        metric: label,
+        avgHighPerform: Math.round(highAvg * 10) / 10,
+        avgLowPerform: Math.round(lowAvg * 10) / 10,
+        impact,
+        confidence,
+        recommendation,
+      };
+    });
+
+    // 提炼关键洞察
+    const topInsights: string[] = [];
+    const highConfidence = correlations.filter(c => c.confidence === 'high');
+    for (const c of highConfidence.slice(0, 3)) {
+      if (c.impact === 'positive') {
+        topInsights.push(`「${c.metric}」与高阅读量强相关：高表现均值 ${c.avgHighPerform} vs 低表现均值 ${c.avgLowPerform}`);
+      } else if (c.impact === 'negative') {
+        topInsights.push(`「${c.metric}」过高反而影响表现：高表现均值 ${c.avgHighPerform} vs 低表现均值 ${c.avgLowPerform}`);
+      }
+    }
+    if (topInsights.length === 0) {
+      topInsights.push(`基于 ${platform} 平台 ${articles.length} 篇文章分析，各 SEO 指标与阅读量相关性尚不显著，建议积累更多数据。`);
+    }
+
+    return { platform, sampleSize: articles.length, correlations, topInsights };
+  } finally {
+    await prisma.$disconnect();
+  }
 }

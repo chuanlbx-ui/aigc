@@ -426,23 +426,38 @@ export class SmartImageService {
     if (candidates.length === 1) return candidates[0];
 
     try {
-      // 限制只评估前 3 张候选图片，避免 AI 调用过多导致超时
-      const MAX_EVALUATE_COUNT = 3;
-      const toEvaluate = candidates.slice(0, MAX_EVALUATE_COUNT);
-
-      // 为每张图片评估相关性
-      const evaluatedImages = [];
-      for (const candidate of toEvaluate) {
-        const relevance = await imageRelevanceService.evaluateRelevance(
-          candidate.url,
+      // 先用本地评估对所有候选排序
+      const localScored = candidates.map(candidate => ({
+        ...candidate,
+        localScore: imageRelevanceService.evaluateRelevanceLocal(
+          { alt: (candidate as any).alt, tags: (candidate as any).tags, description: (candidate as any).description },
           keywords
-        );
+        ),
+      }));
+      localScored.sort((a, b) => b.localScore.score - a.localScore.score);
 
-        evaluatedImages.push({
-          ...candidate,
-          relevanceScore: relevance.score,
-          relevanceConfidence: relevance.confidence,
-        });
+      // 只对 top-2 候选调用 AI 精确评估
+      const AI_EVALUATE_COUNT = 2;
+      const evaluatedImages = [];
+      for (let i = 0; i < localScored.length; i++) {
+        const candidate = localScored[i];
+        if (i < AI_EVALUATE_COUNT && candidate.localScore.confidence !== 'high') {
+          const relevance = await imageRelevanceService.evaluateRelevance(
+            candidate.url,
+            keywords
+          );
+          evaluatedImages.push({
+            ...candidate,
+            relevanceScore: relevance.score,
+            relevanceConfidence: relevance.confidence,
+          });
+        } else {
+          evaluatedImages.push({
+            ...candidate,
+            relevanceScore: candidate.localScore.score,
+            relevanceConfidence: candidate.localScore.confidence,
+          });
+        }
       }
 
       // 使用相关性服务选择最佳图片

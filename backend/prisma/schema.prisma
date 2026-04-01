@@ -1009,3 +1009,20 @@ model ClonedVoice {
   @@index([userId])
   @@index([status])
 }
+
+// ========== Prompt 版本管理 ==========
+
+model PromptTemplate {
+  id        String   @id @default(uuid())
+  key       String                          // 唯一标识，如 topic_discussion | outline | draft
+  name      String                          // 可读名称
+  content   String                          // prompt 内容，支持 {{变量}} 占位符
+  version   Int      @default(1)
+  platform  String?                         // 平台特化（null = 全局）
+  column    String?                         // 栏目特化（null = 平台通用）
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([key, platform, column, isActive])
+}

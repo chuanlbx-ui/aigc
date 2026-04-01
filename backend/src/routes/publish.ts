@@ -11,7 +11,9 @@ import {
   PublishContent,
 } from '../services/publish/index.js';
 import { SmartPublisher } from '../services/publish/smartPublisher.js';
+import { publishQueue } from '../services/publish/publishQueue.js';
 import { ExtensionTaskQueue } from '../services/extension/taskQueue.js';
+import { websocketService } from '../services/websocket.js';
 
 const prisma = new PrismaClient();
 export const publishRouter = Router();
@@ -296,15 +298,16 @@ publishRouter.post('/batch', async (req, res) => {
     }
 
     // 创建批次
+    const totalCount = contentIds.length * platformIds.length;
     const batch = await prisma.publishBatch.create({
       data: {
         contentType,
         contentIds: JSON.stringify(contentIds),
         platformIds: JSON.stringify(platformIds),
-        totalCount: contentIds.length * platformIds.length,
-        pendingCount: contentIds.length * platformIds.length,
+        totalCount,
+        pendingCount: totalCount,
         publishMode: mode,
-        status: 'processing',
+        status: 'pending',
       },
     });
 
@@ -334,7 +337,7 @@ publishRouter.post('/batch', async (req, res) => {
     }
 
     // 异步处理发布任务
-    processBatchPublish(batch.id);
+    await publishQueue.startBatch(batch.id);
 
     res.json({ batchId: batch.id, totalCount: batch.totalCount });
   } catch (error: any) {
@@ -419,6 +422,8 @@ publishRouter.post('/batch/:id/cancel', async (req, res) => {
         completedAt: new Date(),
       },
     });
+
+    websocketService.publishBatchStatus(id, { status: 'cancelled' });
 
     res.json({ success: true });
   } catch (error: any) {

@@ -64,5 +64,9 @@ backend/test/
 backend/nul
 nul
 
+# 临时数据文件（数据迁移用，不提交）
+backend/temp_*.txt
+backend/temp_*.json
+
 # Claude 本地配置
 .claude/

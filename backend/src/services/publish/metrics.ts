@@ -3,7 +3,7 @@
  * 负责采集、存储和展示内容效果数据
  */
 
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -299,11 +299,11 @@ export async function getTopPerformingContent(
     FROM "ContentMetrics" m
     JOIN "Article" a ON m."articleId" = a.id
     WHERE m."metricsDate" >= ${startDate}
-      ${platform ? prisma.Prisma.sql`AND m.platform = ${platform}` : prisma.Prisma.empty}
+      ${platform ? Prisma.sql`AND m.platform = ${platform}` : Prisma.empty}
     GROUP BY a.id, a.title, a.platform, a.column, a."publishedAt"
     ORDER BY total_views DESC
     LIMIT ${limit}
   `;
 
-  return results;
+  return results as any[];
 }

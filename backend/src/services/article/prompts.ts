@@ -56,17 +56,97 @@ export const HKR_DIMENSIONS = {
   },
 };
 
-// 降AI味检查清单
-export const ANTI_AI_CHECKLIST = [
-  { pattern: '在当今时代', action: '删除或替换为具体时间' },
-  { pattern: '综上所述', action: '删除，直接给结论' },
-  { pattern: '值得注意的是', action: '删除，直接说重点' },
-  { pattern: '不是.*而是', action: '拆解为两个独立句子' },
-  { pattern: '显著提升', action: '替换为具体数字' },
-  { pattern: '充分利用', action: '替换为"用好"' },
-  { pattern: '进行.*操作', action: '简化为动词' },
-  { pattern: '相关.*工作', action: '具体说明是什么工作' },
+// 降AI味检查清单（分级：must=必须修改，suggest=建议修改）
+export const ANTI_AI_CHECKLIST: Array<{ pattern: string; action: string; level: 'must' | 'suggest' }> = [
+  // === 必须修改：套话和过渡词 ===
+  { pattern: '在当今时代', action: '删除或替换为具体时间', level: 'must' },
+  { pattern: '综上所述', action: '删除，直接给结论', level: 'must' },
+  { pattern: '值得注意的是', action: '删除，直接说重点', level: 'must' },
+  { pattern: '总的来说', action: '删除，直接给结论', level: 'must' },
+  { pattern: '总而言之', action: '删除，直接给结论', level: 'must' },
+  { pattern: '不言而喻', action: '删除，直接陈述', level: 'must' },
+  { pattern: '毋庸置疑', action: '删除，直接陈述', level: 'must' },
+  { pattern: '众所周知', action: '删除，直接陈述', level: 'must' },
+  { pattern: '不得不说', action: '删除，直接说', level: 'must' },
+  { pattern: '话虽如此', action: '删除，直接转折', level: 'must' },
+  // === 必须修改：书面/AI 词汇 ===
+  { pattern: '显著提升', action: '替换为具体数字', level: 'must' },
+  { pattern: '显著改善', action: '替换为具体描述', level: 'must' },
+  { pattern: '充分利用', action: '替换为"用好"', level: 'must' },
+  { pattern: '充分发挥', action: '替换为具体动作', level: 'must' },
+  { pattern: '进行.*操作', action: '简化为动词', level: 'must' },
+  { pattern: '相关.*工作', action: '具体说明是什么工作', level: 'must' },
+  { pattern: '有效.*提升', action: '替换为具体数字或案例', level: 'must' },
+  { pattern: '深度.*赋能', action: '删除，说清楚做了什么', level: 'must' },
+  { pattern: '全面.*升级', action: '说清楚升级了什么', level: 'must' },
+  { pattern: '持续.*优化', action: '说清楚优化了什么', level: 'must' },
+  // === 必须修改：AI 特有句式 ===
+  { pattern: '不是.*而是', action: '拆解为两个独立句子', level: 'must' },
+  { pattern: '不仅.*还.*更', action: '拆解，避免三重递进', level: 'must' },
+  { pattern: '既.*又.*还', action: '拆解，避免三重并列', level: 'must' },
+  { pattern: '一方面.*另一方面', action: '直接分段陈述', level: 'must' },
+  // === 建议修改：过于正式的表达 ===
+  { pattern: '在此基础上', action: '改为"然后"或直接连接', level: 'suggest' },
+  { pattern: '与此同时', action: '改为"同时"或分句', level: 'suggest' },
+  { pattern: '从某种意义上说', action: '删除，直接说', level: 'suggest' },
+  { pattern: '在一定程度上', action: '删除或量化', level: 'suggest' },
+  { pattern: '可以说', action: '删除，直接断言', level: 'suggest' },
+  { pattern: '某种程度上', action: '删除或量化', level: 'suggest' },
+  { pattern: '不难发现', action: '删除，直接陈述发现', level: 'suggest' },
+  { pattern: '由此可见', action: '删除，直接给结论', level: 'suggest' },
+  // === 建议修改：抽象词汇 ===
+  { pattern: '赋能', action: '说清楚具体帮助了什么', level: 'suggest' },
+  { pattern: '生态.*体系', action: '具体说明包含什么', level: 'suggest' },
+  { pattern: '闭环', action: '说清楚流程是什么', level: 'suggest' },
+  { pattern: '底层逻辑', action: '直接说原因', level: 'suggest' },
+  { pattern: '顶层设计', action: '直接说方案', level: 'suggest' },
 ];
+
+/**
+ * 构建带历史表现数据的选题讨论 prompt
+ * 注入同平台同栏目的高表现文章数据，实现数据驱动选题
+ */
+export function buildContextEnrichedTopicPrompt(params: {
+  topic: string;
+  platform: string;
+  column: string;
+  context?: string;
+  topPerformingData?: Array<{
+    title: string;
+    platform: string;
+    views: number;
+    likes: number;
+    engagementRate: number;
+    publishedAt: string;
+  }>;
+}): string {
+  const basePrompt = buildTopicDiscussionPrompt(params);
+
+  if (!params.topPerformingData || params.topPerformingData.length === 0) {
+    return basePrompt;
+  }
+
+  // 构建历史表现数据摘要
+  const performanceSection = params.topPerformingData
+    .slice(0, 5)
+    .map((item, i) => {
+      return `${i + 1}. 「${item.title}」- 阅读 ${item.views}，点赞 ${item.likes}，互动率 ${(item.engagementRate * 100).toFixed(1)}%`;
+    })
+    .join('\n');
+
+  // 在基础 prompt 的"请分析以下方面"之前插入历史数据
+  const insertPoint = '## 请分析以下方面';
+  const dataSection = `## 历史高表现内容参考
+以下是同平台（${params.platform}）近期表现最好的文章，请参考其选题方向和角度：
+
+${performanceSection}
+
+请在分析中考虑这些成功案例的共性特征，并评估当前选题是否具有类似的成功潜力。
+
+`;
+
+  return basePrompt.replace(insertPoint, dataSection + insertPoint);
+}
 
 // 选题讨论 prompt
 export function buildTopicDiscussionPrompt(params: {

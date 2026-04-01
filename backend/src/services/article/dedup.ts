@@ -3,7 +3,7 @@
  * 基于向量语义相似度检测文章重复和相似内容
  */
 
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { createEmbeddingService, preprocessText } from '../embedding.js';
 
 const prisma = new PrismaClient();
@@ -139,7 +139,7 @@ export async function checkSimilarity(
       1 - (embedding <=> ${queryEmbedding}::vector) as similarity
     FROM "Article"
     WHERE embedding IS NOT NULL
-      ${excludeId ? prisma.Prisma.sql`AND id != ${excludeId}` : prisma.Prisma.empty}
+      ${excludeId ? Prisma.sql`AND id != ${excludeId}` : Prisma.empty}
     HAVING 1 - (embedding <=> ${queryEmbedding}::vector) >= ${threshold}
     ORDER BY embedding <=> ${queryEmbedding}::vector
     LIMIT 10
@@ -212,7 +212,7 @@ export async function checkTopicSimilarity(
       1 - (embedding <=> ${queryEmbedding}::vector) as similarity
     FROM "Article"
     WHERE embedding IS NOT NULL
-      ${excludeId ? prisma.Prisma.sql`AND id != ${excludeId}` : prisma.Prisma.empty}
+      ${excludeId ? Prisma.sql`AND id != ${excludeId}` : Prisma.empty}
     HAVING 1 - (embedding <=> ${queryEmbedding}::vector) >= ${threshold}
     ORDER BY embedding <=> ${queryEmbedding}::vector
     LIMIT 5

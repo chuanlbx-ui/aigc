@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import {
-  Card, Button, Space, Input, message,
-  Collapse, Tag, Divider, Tabs, Tooltip, Modal, Select
+  Card, Button, Space, message,
+  Collapse, Tag, Divider, Tooltip, Modal, Select
 } from 'antd';
 import {
   CheckCircleOutlined, SaveOutlined,
@@ -14,13 +14,12 @@ import { api } from '../../api/client';
 import { Article, PLATFORM_NAMES } from '../../stores/article';
 import SmartImagePanel from './SmartImagePanel';
 import ScriptPanel from './ScriptPanel';
-import EditableResult from './EditableResult';
 import AIModelSelector from '../common/AIModelSelector';
-import WebSearchPanel from './WebSearchPanel';
 import { useWorkflowState } from '../../hooks/useWorkflowState';
-
-const { TextArea } = Input;
-void TextArea; // 保留，可能在模板中使用
+import {
+  StepUnderstand, StepSearch, StepTopic, StepOutline,
+  StepStyle, StepMaterials, StepDraft, StepReview,
+} from './workflow';
 
 interface WorkflowPanelProps {
   article: Article;
@@ -111,6 +110,9 @@ export default function WorkflowPanel({
   // 相似度检测相关状态
   const [similarityResult, setSimilarityResult] = useState<any>(null);
 
+  // 历史表现数据状态
+  const [metricsData, setMetricsData] = useState<any>(null);
+
   // 新增步骤的状态
   const [understandingNotes, setUnderstandingNotes] = useState(workflowData.understanding?.notes || '');
   const [searchInfo, setSearchInfo] = useState(workflowData.search?.content || '');
@@ -161,6 +163,17 @@ export default function WorkflowPanel({
     };
     loadStyleTemplates();
   }, []);
+
+  // 加载历史表现数据（用于"理解需求"步骤）
+  useEffect(() => {
+    if (article?.platform) {
+      api.get('/articles/workflow-metrics', {
+        params: { platform: article.platform, column: article.column || '' }
+      })
+        .then(res => setMetricsData(res.data))
+        .catch(() => {});
+    }
+  }, [article?.platform, article?.column]);
 
   // 风格分析（从链接或内容）
   const handleStyleAnalysis = async () => {
@@ -605,257 +618,98 @@ export default function WorkflowPanel({
       key: 'understand',
       label: renderStepLabel(WORKFLOW_STEPS[0], completedSteps.includes(0)),
       children: (
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Input.TextArea
-            placeholder="写作目标：例如介绍新技术、分享经验、解决问题等"
-            autoSize={{ minRows: 2, maxRows: 4 }}
-            value={understandingNotes}
-            onChange={e => setUnderstandingNotes(e.target.value)}
-          />
-          <Button
-            type="primary"
-            onClick={async () => {
-              await markStepCompleted(0, {
-                understanding: { notes: understandingNotes }
-              });
-              message.success('已保存需求理解');
-            }}
-          >
-            保存并继续
-          </Button>
-        </Space>
+        <StepUnderstand
+          articlePlatform={article.platform}
+          articleColumn={article.column}
+          notes={understandingNotes}
+          metricsData={metricsData}
+          onNotesChange={setUnderstandingNotes}
+          onComplete={async (notes) => {
+            await markStepCompleted(0, { understanding: { notes } });
+            message.success('已保存需求理解');
+          }}
+        />
       ),
     },
     {
       key: 'search',
       label: renderStepLabel(WORKFLOW_STEPS[1], completedSteps.includes(1)),
       children: (
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <WebSearchPanel
-            serviceId={selectedServiceId}
-            onResultsChange={async (_results, content) => {
-              setSearchInfo(content);
-              await markStepCompleted(1, {
-                search: { content }
-              });
-            }}
-          />
-        </Space>
+        <StepSearch
+          serviceId={selectedServiceId}
+          onComplete={async (content) => {
+            setSearchInfo(content);
+            await markStepCompleted(1, { search: { content } });
+          }}
+        />
       ),
     },
     {
       key: 'topic',
       label: renderStepLabel(WORKFLOW_STEPS[2], completedSteps.includes(2)),
       children: (
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Input
-            placeholder="输入选题关键词"
-            value={topicInput}
-            onChange={e => setTopicInput(e.target.value)}
-          />
-          <Button type="primary" onClick={handleTopicDiscussion} loading={loadingSteps['topic']}>
-            开始分析
-          </Button>
-          <EditableResult
-            value={topicResult}
-            onChange={setTopicResult}
-            onRegenerate={handleTopicDiscussion}
-            loading={loadingSteps['topic']}
-          />
-        </Space>
+        <StepTopic
+          topicInput={topicInput}
+          topicResult={topicResult}
+          loading={loadingSteps['topic']}
+          similarityResult={similarityResult}
+          onTopicInputChange={setTopicInput}
+          onTopicResultChange={setTopicResult}
+          onAnalyze={handleTopicDiscussion}
+        />
       ),
     },
     {
       key: 'outline',
       label: renderStepLabel(WORKFLOW_STEPS[3], completedSteps.includes(3)),
       children: (
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Button type="primary" onClick={handleOutline} loading={loadingSteps['outline']}>
-            生成大纲
-          </Button>
-          <EditableResult
-            value={outlineResult}
-            onChange={setOutlineResult}
-            onRegenerate={handleOutline}
-            loading={loadingSteps['outline']}
-          />
-        </Space>
+        <StepOutline
+          outlineResult={outlineResult}
+          loading={loadingSteps['outline']}
+          onOutlineChange={setOutlineResult}
+          onGenerate={handleOutline}
+        />
       ),
     },
     {
       key: 'style',
       label: renderStepLabel(WORKFLOW_STEPS[4], completedSteps.includes(4)),
       children: (
-        <Tabs
-          defaultActiveKey="template"
-          items={[
-            {
-              key: 'template',
-              label: '选择风格模板',
-              children: (
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <div style={{ color: '#666', fontSize: 12, marginBottom: 8 }}>
-                    选择一个预设风格模板，AI 将按此风格生成文章
-                  </div>
-                  <Select
-                    style={{ width: '100%' }}
-                    placeholder="选择风格模板"
-                    value={selectedStyleId || undefined}
-                    onChange={setSelectedStyleId}
-                  >
-                    {styleTemplates.map(t => (
-                      <Select.Option key={t.id} value={t.id}>
-                        <div>
-                          <strong>{t.name}</strong>
-                          <span style={{ marginLeft: 8, color: '#999', fontSize: 12 }}>{t.description}</span>
-                        </div>
-                      </Select.Option>
-                    ))}
-                  </Select>
-                  {selectedStyleId && styleTemplates.find(t => t.id === selectedStyleId) && (
-                    <Card size="small" style={{ background: '#f6ffed', marginTop: 8 }}>
-                      <div style={{ fontWeight: 500, marginBottom: 8 }}>
-                        {styleTemplates.find(t => t.id === selectedStyleId)?.name} 风格特点：
-                      </div>
-                      <ul style={{ margin: 0, paddingLeft: 20 }}>
-                        {styleTemplates.find(t => t.id === selectedStyleId)?.characteristics?.map((c: string, i: number) => (
-                          <li key={i}>{c}</li>
-                        ))}
-                      </ul>
-                    </Card>
-                  )}
-                  <Button
-                    type="primary"
-                    disabled={!selectedStyleId}
-                    onClick={async () => {
-                      const template = styleTemplates.find(t => t.id === selectedStyleId);
-                      await markStepCompleted(4, {
-                        style: {
-                          platform: article.platform,
-                          column: article.column,
-                          templateId: selectedStyleId,
-                          templateName: template?.name,
-                          analysis: {
-                            styleType: template?.name,
-                            summary: template?.description,
-                            techniques: template?.characteristics,
-                          }
-                        }
-                      });
-                      setStyleAnalysis({
-                        styleType: template?.name,
-                        summary: template?.description,
-                        techniques: template?.characteristics,
-                      });
-                      message.success('已选择风格模板');
-                    }}
-                  >
-                    确认选择
-                  </Button>
-                </Space>
-              ),
-            },
-            {
-              key: 'learn',
-              label: '从文章学习',
-              children: (
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <div style={{ color: '#666', fontSize: 12, marginBottom: 8 }}>
-                    输入文章链接或粘贴内容，AI 将分析其写作风格供你参考
-                  </div>
-                  <Input
-                    placeholder="输入文章链接（如公众号文章链接）"
-                    value={styleUrl}
-                    onChange={e => setStyleUrl(e.target.value)}
-                  />
-                  <div style={{ textAlign: 'center', color: '#999' }}>或</div>
-                  <Input.TextArea
-                    placeholder="直接粘贴文章内容..."
-                    value={styleContent}
-                    onChange={e => setStyleContent(e.target.value)}
-                    autoSize={{ minRows: 3, maxRows: 6 }}
-                  />
-                  <Button
-                    type="primary"
-                    onClick={handleStyleAnalysis}
-                    loading={loadingSteps['style']}
-                    disabled={!styleUrl && !styleContent}
-                  >
-                    分析风格
-                  </Button>
-                  {styleAnalysis && (
-                    <Card size="small" style={{ background: '#f0f5ff', marginTop: 8 }}>
-                      <div style={{ fontWeight: 500, marginBottom: 8 }}>风格分析结果：</div>
-                      {styleAnalysis.raw ? (
-                        <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontSize: 12 }}>{styleAnalysis.raw}</pre>
-                      ) : (
-                        <Space direction="vertical" style={{ width: '100%' }}>
-                          <div><strong>风格类型：</strong>{styleAnalysis.styleType}</div>
-                          <div><strong>总结：</strong>{styleAnalysis.summary}</div>
-                          {styleAnalysis.techniques?.length > 0 && (
-                            <div>
-                              <strong>写作技巧：</strong>
-                              <ul style={{ margin: '4px 0 0 0', paddingLeft: 20 }}>
-                                {styleAnalysis.techniques.map((t: string, i: number) => (
-                                  <li key={i}>{t}</li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                        </Space>
-                      )}
-                      <Button
-                        type="primary"
-                        size="small"
-                        style={{ marginTop: 12 }}
-                        onClick={async () => {
-                          await markStepCompleted(4, {
-                            style: {
-                              platform: article.platform,
-                              column: article.column,
-                              analysis: styleAnalysis,
-                              sourceUrl: styleUrl,
-                            }
-                          });
-                          message.success('已保存风格分析');
-                        }}
-                      >
-                        使用此风格
-                      </Button>
-                    </Card>
-                  )}
-                </Space>
-              ),
-            },
-            {
-              key: 'default',
-              label: '默认风格',
-              children: (
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <Card size="small" style={{ background: '#f5f5f5' }}>
-                    <Space direction="vertical">
-                      <div><strong>平台：</strong>{PLATFORM_NAMES[article.platform]}</div>
-                      <div><strong>栏目：</strong>{article.column}</div>
-                    </Space>
-                  </Card>
-                  <div style={{ color: '#666', fontSize: 12 }}>
-                    使用平台和栏目的默认风格设置
-                  </div>
-                  <Button
-                    type="primary"
-                    onClick={async () => {
-                      await markStepCompleted(4, {
-                        style: { platform: article.platform, column: article.column }
-                      });
-                      message.success('已确认风格设置');
-                    }}
-                  >
-                    确认并继续
-                  </Button>
-                </Space>
-              ),
-            },
-          ]}
+        <StepStyle
+          platform={article.platform}
+          column={article.column}
+          styleTemplates={styleTemplates}
+          selectedStyleId={selectedStyleId}
+          styleUrl={styleUrl}
+          styleContent={styleContent}
+          styleAnalysis={styleAnalysis}
+          loading={loadingSteps['style']}
+          onStyleIdChange={setSelectedStyleId}
+          onStyleUrlChange={setStyleUrl}
+          onStyleContentChange={setStyleContent}
+          onAnalyze={handleStyleAnalysis}
+          onConfirmTemplate={async () => {
+            const template = styleTemplates.find(t => t.id === selectedStyleId);
+            await markStepCompleted(4, {
+              style: {
+                platform: article.platform,
+                column: article.column,
+                templateId: selectedStyleId,
+                templateName: template?.name,
+                analysis: { styleType: template?.name, summary: template?.description, techniques: template?.characteristics },
+              }
+            });
+            setStyleAnalysis({ styleType: template?.name, summary: template?.description, techniques: template?.characteristics });
+            message.success('已选择风格模板');
+          }}
+          onConfirmDefault={async () => {
+            await markStepCompleted(4, { style: { platform: article.platform, column: article.column } });
+            message.success('已确认风格设置');
+          }}
+          onSaveAnalysis={async () => {
+            await markStepCompleted(4, { style: { platform: article.platform, column: article.column, analysis: styleAnalysis, sourceUrl: styleUrl } });
+            message.success('已保存风格分析');
+          }}
         />
       ),
     },
@@ -863,48 +717,14 @@ export default function WorkflowPanel({
       key: 'materials',
       label: renderStepLabel(WORKFLOW_STEPS[5], completedSteps.includes(5)),
       children: (
-        <Tabs
-          defaultActiveKey="knowledge"
-          items={[
-            {
-              key: 'knowledge',
-              label: '知识库搜索',
-              children: (
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <Input.Search
-                    placeholder="搜索知识库素材"
-                    value={materialsQuery}
-                    onChange={e => setMaterialsQuery(e.target.value)}
-                    onSearch={handleSearchMaterials}
-                    enterButton="搜索"
-                    loading={loadingSteps['materials']}
-                  />
-                  {materialsResult.length > 0 && (
-                    <div style={{ maxHeight: 300, overflow: 'auto' }}>
-                      {materialsResult.map((m, i) => (
-                        <Card key={i} size="small" style={{ marginBottom: 8 }}>
-                          <div style={{ fontWeight: 500 }}>{m.title}</div>
-                          <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
-                            {m.excerpt?.substring(0, 200)}...
-                          </div>
-                        </Card>
-                      ))}
-                    </div>
-                  )}
-                </Space>
-              ),
-            },
-            {
-              key: 'web',
-              label: <span><GlobalOutlined /> AI 联网搜索</span>,
-              children: (
-                <WebSearchPanel
-                  serviceId={selectedServiceId}
-                  onResultsChange={handleWebSearchComplete}
-                />
-              ),
-            },
-          ]}
+        <StepMaterials
+          materialsQuery={materialsQuery}
+          materialsResult={materialsResult}
+          loading={loadingSteps['materials']}
+          serviceId={selectedServiceId}
+          onQueryChange={setMaterialsQuery}
+          onSearch={handleSearchMaterials}
+          onWebSearchComplete={handleWebSearchComplete}
         />
       ),
     },
@@ -912,163 +732,36 @@ export default function WorkflowPanel({
       key: 'draft',
       label: renderStepLabel(WORKFLOW_STEPS[6], completedSteps.includes(6)),
       children: (
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Button
-            type="primary"
-            onClick={handleDraft}
-            loading={loadingSteps['draft']}
-            disabled={!outlineResult}
-          >
-            生成初稿
-          </Button>
-          {!outlineResult && (
-            <div style={{ color: '#faad14', fontSize: 12 }}>
-              请先生成大纲
-            </div>
-          )}
-          <Divider style={{ margin: '12px 0' }} />
-          <div style={{ color: '#666', fontSize: 12 }}>
-            针对性优化：输入优化指令，AI 将根据指令优化文章
-          </div>
-          <Input.TextArea
-            placeholder="输入优化指令，如：加强开头吸引力、补充数据支撑、增加案例说明..."
-            value={optimizeInstruction}
-            onChange={e => setOptimizeInstruction(e.target.value)}
-            autoSize={{ minRows: 2, maxRows: 4 }}
-          />
-          <Button
-            onClick={handleOptimize}
-            loading={optimizing}
-            disabled={!content.trim()}
-          >
-            针对性优化
-          </Button>
-        </Space>
+        <StepDraft
+          outlineResult={outlineResult}
+          content={content}
+          optimizeInstruction={optimizeInstruction}
+          draftLoading={loadingSteps['draft']}
+          optimizing={optimizing}
+          onOptimizeInstructionChange={setOptimizeInstruction}
+          onGenerate={handleDraft}
+          onOptimize={handleOptimize}
+        />
       ),
     },
     {
       key: 'review',
       label: renderStepLabel(WORKFLOW_STEPS[7], completedSteps.includes(7)),
       children: (
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <Button
-            type="primary"
-            onClick={handleReview}
-            loading={loadingSteps['review']}
-            disabled={!content.trim()}
-          >
-            开始审校
-          </Button>
-          {reviewResult && (
-            <Card size="small" style={{ background: '#fff7e6' }}>
-              <pre style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{reviewResult}</pre>
-            </Card>
-          )}
-          <Divider style={{ margin: '12px 0' }} />
-          <div style={{ fontWeight: 500 }}>发布前质量检查</div>
-          <div style={{ color: '#666', fontSize: 12 }}>
-            检查 AI 味关键词、字数、配图、工作流完成度等
-          </div>
-          <Button
-            onClick={handleQualityCheck}
-            loading={qualityChecking}
-            disabled={!content.trim()}
-          >
-            质量检查
-          </Button>
-          {qualityResult && (
-            <Card size="small" style={{ background: qualityResult.passed ? '#f6ffed' : '#fff2f0' }}>
-              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-                {qualityResult.passed ? (
-                  <Tag color="success">通过</Tag>
-                ) : (
-                  <Tag color="error">未通过</Tag>
-                )}
-                <span style={{ marginLeft: 8, fontWeight: 500 }}>评分：{qualityResult.score}/100</span>
-              </div>
-              <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
-                {qualityResult.overallComment}
-              </div>
-              {qualityResult.suggestions.length > 0 && (
-                <div>
-                  <div style={{ fontWeight: 500, marginBottom: 4 }}>改进建议：</div>
-                  <ul style={{ margin: 0, paddingLeft: 20, fontSize: 12 }}>
-                    {qualityResult.suggestions.map((s: string, i: number) => (
-                      <li key={i}>{s}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </Card>
-          )}
-        </Space>
-      ),
-    },
-    {
-      key: 'hkr',
-      label: <span><RocketOutlined /> HKR 评估</span>,
-      children: (
-        <Space direction="vertical" style={{ width: '100%' }}>
-          <div style={{ color: '#666', fontSize: 12 }}>
-            H(吸引力) K(知识价值) R(情感共鸣) 三维评估
-          </div>
-          <Button
-            type="primary"
-            onClick={handleHKR}
-            loading={loadingSteps['hkr']}
-            disabled={!content.trim()}
-          >
-            开始评估
-          </Button>
-          {hkrResult && (
-            <Card size="small">
-              {typeof hkrResult === 'object' ? (
-                <Space direction="vertical" style={{ width: '100%' }}>
-                  <div>
-                    <Tag color="blue">H 吸引力</Tag>
-                    <span>{hkrResult.H?.score}/10</span>
-                    <span style={{ marginLeft: 8, color: '#666' }}>{hkrResult.H?.comment}</span>
-                  </div>
-                  <div>
-                    <Tag color="green">K 知识价值</Tag>
-                    <span>{hkrResult.K?.score}/10</span>
-                    <span style={{ marginLeft: 8, color: '#666' }}>{hkrResult.K?.comment}</span>
-                  </div>
-                  <div>
-                    <Tag color="orange">R 情感共鸣</Tag>
-                    <span>{hkrResult.R?.score}/10</span>
-                    <span style={{ marginLeft: 8, color: '#666' }}>{hkrResult.R?.comment}</span>
-                  </div>
-                  <Divider style={{ margin: '8px 0' }} />
-                  <div style={{ fontWeight: 500 }}>
-                    综合评分：{hkrResult.overall}/10
-                  </div>
-                  {hkrResult.suggestions && (
-                    <div style={{ marginTop: 8 }}>
-                      <div style={{ fontWeight: 500, marginBottom: 4 }}>改进建议：</div>
-                      <ul style={{ margin: 0, paddingLeft: 20 }}>
-                        {hkrResult.suggestions.map((s: string, i: number) => (
-                          <li key={i}>{s}</li>
-                        ))}
-                      </ul>
-                      <Button
-                        type="primary"
-                        size="small"
-                        style={{ marginTop: 12 }}
-                        onClick={handleHKRImprove}
-                        loading={improving}
-                      >
-                        根据建议自动改进
-                      </Button>
-                    </div>
-                  )}
-                </Space>
-              ) : (
-                <pre style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{hkrResult}</pre>
-              )}
-            </Card>
-          )}
-        </Space>
+        <StepReview
+          content={content}
+          reviewResult={reviewResult}
+          hkrResult={hkrResult}
+          qualityResult={qualityResult}
+          reviewLoading={loadingSteps['review']}
+          hkrLoading={loadingSteps['hkr']}
+          qualityChecking={qualityChecking}
+          improving={improving}
+          onReview={handleReview}
+          onHKR={handleHKR}
+          onHKRImprove={handleHKRImprove}
+          onQualityCheck={handleQualityCheck}
+        />
       ),
     },
     {

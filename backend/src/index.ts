@@ -9,8 +9,9 @@ import { taskRouter } from './routes/task.js';
 import { ttsRouter } from './routes/tts.js';
 import { voiceCloneRouter } from './routes/voice-clone.js';
 import { popupTemplateRouter } from './routes/popupTemplate.js';
-import { knowledgeRouter } from './routes/knowledge.js';
-import { articleRouter } from './routes/article.js';
+import { knowledgeRouter } from './routes/knowledge/index.js';
+import { articleRouter } from './routes/article/index.js';
+import { aiRouter as articleAiRouter } from './routes/article.js';
 import templateRouter from './routes/template.js';
 import aiStatsRouter from './routes/ai-stats.js';
 import authRouter from './routes/auth.js';
@@ -35,6 +36,8 @@ import { openApiRouter } from './routes/openApi.js';
 import { apiTokensRouter } from './routes/apiTokens.js';
 import { PrismaClient } from '@prisma/client';
 import { publishScheduler } from './services/publish/scheduler.js';
+import { publishQueue } from './services/publish/publishQueue.js';
+import { websocketService } from './services/websocket.js';
 
 const prisma = new PrismaClient();
 
@@ -74,6 +77,7 @@ app.use('/api/voice-clone', voiceCloneRouter);
 app.use('/api/popup-templates', popupTemplateRouter);
 app.use('/api/knowledge', knowledgeRouter);
 app.use('/api/articles', articleRouter);
+app.use('/api/articles', articleAiRouter);
 app.use('/api/templates', templateRouter);
 app.use('/api/ai-stats', aiStatsRouter);
 app.use('/api/auth', authRouter);
@@ -153,7 +157,7 @@ async function checkDatabaseConnection() {
   }
 }
 
-app.listen(PORT, async () => {
+const server = app.listen(PORT, async () => {
   console.log(`后端服务运行在 http://localhost:${PORT}`);
   
   // 检测数据库连接
@@ -161,17 +165,22 @@ app.listen(PORT, async () => {
 
   // 启动定时发布调度器
   publishScheduler.start();
+  await publishQueue.recoverProcessingBatches();
 });
+
+websocketService.init(server);
 
 // 优雅关闭
 process.on('SIGTERM', () => {
   console.log('收到 SIGTERM 信号，正在关闭服务...');
   publishScheduler.stop();
+  websocketService.close();
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
   console.log('收到 SIGINT 信号，正在关闭服务...');
   publishScheduler.stop();
+  websocketService.close();
   process.exit(0);
 });

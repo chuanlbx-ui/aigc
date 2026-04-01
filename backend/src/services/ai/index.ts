@@ -151,6 +151,111 @@ export const aiService = {
   }
 };
 
+import { checkBudget, logAICall } from '../ai-logger.js';
+
+/**
+ * 创建带预算守卫的 AI 服务
+ * 在每次调用前检查预算，调用后记录日志
+ */
+export async function createAIServiceWithBudget(
+  config: AIServiceConfig,
+  feature: string = 'general',
+  tenantId?: string
+): Promise<AIService> {
+  const budgetCheck = await checkBudget(tenantId);
+  if (!budgetCheck.allowed) {
+    throw new Error(`AI 预算超限: ${budgetCheck.warning}`);
+  }
+
+  if (budgetCheck.warning) {
+    console.warn(`[AI Budget] ${budgetCheck.warning}`);
+  }
+
+  const service = createAIService(config);
+
+  // 包装 chat 方法，添加日志记录
+  const originalChat = service.chat.bind(service);
+  service.chat = async (messages) => {
+    const startTime = Date.now();
+    try {
+      const result = await originalChat(messages);
+      const latencyMs = Date.now() - startTime;
+      // 估算 token 数（粗略：中文约 2 token/字，英文约 1.3 token/word）
+      const inputText = messages.map(m => m.content).join('');
+      const inputTokens = Math.ceil(inputText.length * 1.5);
+      const outputTokens = Math.ceil(result.length * 1.5);
+
+      await logAICall({
+        provider: config.provider,
+        model: config.model,
+        endpoint: 'chat',
+        feature,
+        inputTokens,
+        outputTokens,
+        latencyMs,
+        status: 'success',
+      });
+
+      return result;
+    } catch (error) {
+      const latencyMs = Date.now() - startTime;
+      await logAICall({
+        provider: config.provider,
+        model: config.model,
+        endpoint: 'chat',
+        feature,
+        inputTokens: 0,
+        outputTokens: 0,
+        latencyMs,
+        status: 'error',
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  };
+
+  // 包装 generateContent 方法
+  const originalGenerate = service.generateContent.bind(service);
+  service.generateContent = async (prompt, context) => {
+    const startTime = Date.now();
+    try {
+      const result = await originalGenerate(prompt, context);
+      const latencyMs = Date.now() - startTime;
+      const inputTokens = Math.ceil((prompt.length + (context?.length || 0)) * 1.5);
+      const outputTokens = Math.ceil(result.length * 1.5);
+
+      await logAICall({
+        provider: config.provider,
+        model: config.model,
+        endpoint: 'generateContent',
+        feature,
+        inputTokens,
+        outputTokens,
+        latencyMs,
+        status: 'success',
+      });
+
+      return result;
+    } catch (error) {
+      const latencyMs = Date.now() - startTime;
+      await logAICall({
+        provider: config.provider,
+        model: config.model,
+        endpoint: 'generateContent',
+        feature,
+        inputTokens: 0,
+        outputTokens: 0,
+        latencyMs,
+        status: 'error',
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  };
+
+  return service;
+}
+
 // ========== 任务级智能路由 ==========
 
 export type AITaskType =
@@ -200,5 +305,109 @@ export async function getAIConfigByTaskType(taskType: AITaskType): Promise<AISer
  */
 export async function getWebSearchAIConfig(): Promise<AIServiceConfig | null> {
   return getAIConfigByTaskType('news_writing');
+}
+
+// ========== SmartRouter：基于历史数据动态选择模型 ==========
+
+interface ModelPerformance {
+  provider: string;
+  model: string;
+  avgLatencyMs: number;
+  errorRate: number;
+  callCount: number;
+}
+
+/**
+ * SmartRouter：基于 AICallLog 历史数据动态选择最优模型
+ * 综合考虑：静态偏好 > 历史成功率 > 延迟 > 回退默认
+ */
+export class SmartRouter {
+  /**
+   * 获取指定任务类型的最优配置
+   * 先按静态偏好筛选候选，再按历史数据排序，最后降级到默认
+   */
+  static async getBestConfig(taskType: AITaskType): Promise<AIServiceConfig | null> {
+    const preferences = TASK_PROVIDER_PREFERENCES[taskType];
+    const enabledConfigs = await prisma.aIServiceConfig.findMany({ where: { isEnabled: true } });
+
+    // 候选列表：按静态偏好顺序筛选已启用的 provider
+    const candidates = preferences.length > 0
+      ? preferences
+          .map(p => enabledConfigs.find(c => c.provider === p))
+          .filter((c): c is NonNullable<typeof c> => !!c)
+      : enabledConfigs;
+
+    if (candidates.length === 0) return getDefaultAIConfig();
+    if (candidates.length === 1) return toAIServiceConfig(candidates[0]);
+
+    // 查询最近 7 天的历史表现
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const logs = await prisma.aICallLog.findMany({
+      where: { createdAt: { gte: since } },
+      select: { provider: true, model: true, latencyMs: true, status: true },
+    });
+
+    // 按 provider 聚合性能数据
+    const perfMap = new Map<string, ModelPerformance>();
+    for (const log of logs) {
+      const key = log.provider;
+      const existing = perfMap.get(key) || { provider: log.provider, model: log.model, avgLatencyMs: 0, errorRate: 0, callCount: 0 };
+      const total = existing.callCount + 1;
+      const errors = Math.round(existing.errorRate * existing.callCount) + (log.status === 'error' ? 1 : 0);
+      perfMap.set(key, {
+        provider: log.provider,
+        model: log.model,
+        avgLatencyMs: (existing.avgLatencyMs * existing.callCount + log.latencyMs) / total,
+        errorRate: errors / total,
+        callCount: total,
+      });
+    }
+
+    // 对候选排序：错误率低 > 延迟低（历史数据不足时保持静态偏好顺序）
+    const scored = candidates.map((c, idx) => {
+      const perf = perfMap.get(c.provider);
+      if (!perf || perf.callCount < 5) {
+        // 历史数据不足，用静态偏好顺序作为分数（越靠前越好）
+        return { config: c, score: 1000 - idx * 10 };
+      }
+      // 分数 = (1 - 错误率) * 100 - 延迟惩罚（每100ms扣1分）
+      const score = (1 - perf.errorRate) * 100 - perf.avgLatencyMs / 100;
+      return { config: c, score };
+    });
+
+    scored.sort((a, b) => b.score - a.score);
+    const best = scored[0].config;
+
+    // 如果最优选错误率过高（>50%），降级到默认
+    const bestPerf = perfMap.get(best.provider);
+    if (bestPerf && bestPerf.callCount >= 5 && bestPerf.errorRate > 0.5) {
+      console.warn(`[SmartRouter] ${best.provider} 错误率 ${(bestPerf.errorRate * 100).toFixed(0)}%，降级到默认模型`);
+      return getDefaultAIConfig();
+    }
+
+    return toAIServiceConfig(best);
+  }
+
+  /**
+   * 带自动降级的服务创建：首选失败时自动切换备选
+   */
+  static async createServiceWithFallback(
+    taskType: AITaskType,
+    feature: string,
+    tenantId?: string
+  ): Promise<AIService> {
+    const primary = await SmartRouter.getBestConfig(taskType);
+    if (!primary) throw new Error('未配置任何可用 AI 服务');
+
+    try {
+      return await createAIServiceWithBudget(primary, feature, tenantId);
+    } catch (err) {
+      // 首选失败，尝试默认模型
+      console.warn(`[SmartRouter] 首选 ${primary.provider} 不可用，降级到默认模型`);
+      const fallback = await getDefaultAIConfig();
+      if (!fallback || fallback.provider === primary.provider) throw err;
+      return await createAIServiceWithBudget(fallback, feature, tenantId);
+    }
+  }
 }
 

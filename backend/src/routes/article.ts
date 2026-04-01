@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
-import { getDefaultAIConfig, createAIService, getAIConfigOrDefault, getAllAIConfigs, getWebSearchAIConfig, getAIConfigByTaskType } from '../services/ai/index.js';
+import { getDefaultAIConfig, createAIService, createAIServiceWithBudget, getAIConfigOrDefault, getAllAIConfigs, getWebSearchAIConfig, getAIConfigByTaskType } from '../services/ai/index.js';
 import { createEmbeddingService, preprocessText } from '../services/embedding.js';
 import {
   buildTopicDiscussionPrompt,
@@ -30,10 +30,36 @@ import { WORKFLOW_STEPS, buildWorkflowContext, hasStyleAnalysis } from '../servi
 import { generatePoster, ensurePosterDir } from '../services/article/posterGenerator.js';
 import { loadTemplate, replaceVariables, buildPromptWithTemplate } from '../services/article/templateService.js';
 import { performQualityCheck, quickQualityCheck } from '../services/article/qualityGate.js';
+import { getEffectiveWorkflowData, syncWorkflowSteps } from '../services/article/workflowStorage.js';
+import { websocketService } from '../services/websocket.js';
 import { requireAuth } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
+import {
+  hkrEvaluateSchema,
+  idParamSchema,
+  outlineSchema,
+  qualityCheckSchema,
+  reviewSchema,
+  topicDiscussionSchema,
+  workflowUpdateSchema,
+} from '../validators/article.js';
 
 const prisma = new PrismaClient();
 export const articleRouter = Router();
+// 导出 AI 路由供 index.ts 使用
+export const aiRouter = articleRouter;
+
+async function createBudgetedArticleAIService(
+  config: Awaited<ReturnType<typeof getAIConfigOrDefault>>,
+  feature: string,
+  tenantId?: string | null
+) {
+  if (!config) {
+    throw new Error('璇峰厛閰嶇疆 AI 鏈嶅姟');
+  }
+
+  return createAIServiceWithBudget(config, feature, tenantId || undefined);
+}
 
 // 文章文件存储目录
 const ARTICLES_DIR = './articles';
@@ -309,8 +335,8 @@ articleRouter.get('/share/:slug', async (req, res) => {
 
 // 以下 API 需要登录
 articleRouter.use((req, res, next) => {
-  // 跳过公开 API
-  if (req.path.startsWith('/public')) {
+  // 跳过公开 API 和 /ai/ 路由
+  if (req.path.startsWith('/public') || req.path.startsWith('/ai')) {
     return next();
   }
   return requireAuth(req, res, next);
@@ -369,8 +395,8 @@ articleRouter.get('/', async (req, res) => {
   }
 });
 
-// 获取单个文章
-articleRouter.get('/:id', async (req, res) => {
+// 获取单个文章 - 使用正则只匹配UUID格式，避免匹配 /ai/ 等路径
+articleRouter.get('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', async (req, res) => {
   try {
     const article = await prisma.article.findFirst({
       where: { id: req.params.id, userId: req.user!.id },
@@ -381,7 +407,7 @@ articleRouter.get('/:id', async (req, res) => {
     }
 
     // 解析工作流数据
-    const workflowData = JSON.parse(article.workflowData || '{}');
+    const workflowData = await getEffectiveWorkflowData(article.id, article.workflowData);
 
     res.json({
       ...article,
@@ -392,8 +418,8 @@ articleRouter.get('/:id', async (req, res) => {
   }
 });
 
-// 获取文章内容
-articleRouter.get('/:id/content', async (req, res) => {
+// 获取文章内容 - UUID格式
+articleRouter.get('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/content', async (req, res) => {
   try {
     const article = await prisma.article.findFirst({
       where: { id: req.params.id, userId: req.user!.id },
@@ -463,8 +489,8 @@ articleRouter.post('/', async (req, res) => {
   }
 });
 
-// 更新文章元数据
-articleRouter.put('/:id', async (req, res) => {
+// 更新文章元数据 - UUID格式
+articleRouter.put('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})', async (req, res) => {
   try {
     const { title, summary, platform, column, categoryId, tags, coverImage, knowledgeRefs, layoutTheme } = req.body;
 
@@ -499,7 +525,7 @@ articleRouter.put('/:id', async (req, res) => {
 });
 
 // 更新文章内容（自动创建版本，内容无变化时跳过）
-articleRouter.put('/:id/content', async (req, res) => {
+articleRouter.put('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/content', async (req, res) => {
   try {
     const { content, changeNote } = req.body;
     if (!content) {
@@ -576,7 +602,7 @@ articleRouter.put('/:id/content', async (req, res) => {
 });
 
 // 更新工作流进度
-articleRouter.put('/:id/workflow', async (req, res) => {
+articleRouter.put('/:id/workflow', validate({ params: idParamSchema, body: workflowUpdateSchema }), async (req, res) => {
   try {
     const { step, stepData, completed } = req.body;
 
@@ -589,7 +615,7 @@ articleRouter.put('/:id/workflow', async (req, res) => {
     }
 
     // 解析现有工作流数据
-    const workflowData = JSON.parse(article.workflowData || '{}');
+    const workflowData = await getEffectiveWorkflowData(article.id, article.workflowData);
 
     // 更新步骤数据
     if (stepData) {
@@ -603,6 +629,16 @@ articleRouter.put('/:id/workflow', async (req, res) => {
         workflowStep: step !== undefined ? step : article.workflowStep,
         workflowData: JSON.stringify(workflowData),
       },
+    });
+
+    await syncWorkflowSteps(
+      req.params.id,
+      workflowData,
+      step !== undefined ? step : article.workflowStep
+    );
+
+    websocketService.publishWorkflowProgress(req.params.id, {
+      step: updated.workflowStep,
     });
 
     res.json({
@@ -648,7 +684,7 @@ articleRouter.delete('/:id', async (req, res) => {
 // ========== 版本管理 API ==========
 
 // 获取文章版本列表
-articleRouter.get('/:id/versions', async (req, res) => {
+articleRouter.get('/:id([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/versions', async (req, res) => {
   try {
     const article = await prisma.article.findFirst({
       where: { id: req.params.id, userId: req.user!.id },
@@ -906,34 +942,6 @@ articleRouter.delete('/categories/:id', async (req, res) => {
   }
 });
 
-// ========== 工作流 API ==========
-
-// 更新工作流状态
-articleRouter.put('/:id/workflow', async (req, res) => {
-  try {
-    const { step, data } = req.body;
-
-    // 验证文章属于当前用户
-    const existing = await prisma.article.findFirst({
-      where: { id: req.params.id, userId: req.user!.id }
-    });
-    if (!existing) {
-      return res.status(404).json({ error: '文章不存在' });
-    }
-
-    const article = await prisma.article.update({
-      where: { id: req.params.id },
-      data: {
-        ...(step !== undefined && { workflowStep: step }),
-        ...(data && { workflowData: JSON.stringify(data) }),
-      },
-    });
-    res.json(article);
-  } catch (error) {
-    res.status(500).json({ error: '更新工作流失败' });
-  }
-});
-
 // 获取平台栏目配置
 articleRouter.get('/config/platforms', async (req, res) => {
   res.json(PLATFORM_COLUMNS);
@@ -946,8 +954,23 @@ articleRouter.get('/config/workflow', async (req, res) => {
 
 // ========== AI 辅助创作 API ==========
 
+// 获取工作流效果数据
+articleRouter.get('/workflow-metrics', async (req, res) => {
+  try {
+    const { platform, column } = req.query;
+    const { enrichWorkflowWithMetrics } = await import('../services/article/workflow.js');
+    const data = await enrichWorkflowWithMetrics({
+      platform: platform as string || '',
+      column: column as string || '',
+    });
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: '获取效果数据失败' });
+  }
+});
+
 // 选题讨论
-articleRouter.post('/ai/topic-discussion', async (req, res) => {
+articleRouter.post('/ai/topic-discussion', validate({ body: topicDiscussionSchema }), async (req, res) => {
   try {
     const { topic, platform, column, context, serviceId, templateId } = req.body;
     if (!topic || !platform || !column) {
@@ -959,6 +982,11 @@ articleRouter.post('/ai/topic-discussion', async (req, res) => {
       return res.status(400).json({ error: '请先配置 AI 服务' });
     }
 
+    // 获取历史表现数据，实现数据驱动选题
+    const { enrichWorkflowWithMetrics } = await import('../services/article/workflow.js');
+    const { buildContextEnrichedTopicPrompt } = await import('../services/article/prompts.js');
+    const metricsData = await enrichWorkflowWithMetrics({ platform, column });
+
     let prompt;
     if (templateId) {
       const template = await loadTemplate(templateId);
@@ -967,10 +995,17 @@ articleRouter.post('/ai/topic-discussion', async (req, res) => {
         columnStyle: template.columnStyles[platform]?.[column]
       });
     } else {
-      prompt = buildTopicDiscussionPrompt({ topic, platform, column, context });
+      prompt = buildContextEnrichedTopicPrompt({
+        topic, platform, column, context,
+        topPerformingData: metricsData.topArticles,
+      });
     }
 
-    const service = createAIService(config);
+    const service = await createBudgetedArticleAIService(
+      config,
+      'article_topic_discussion',
+      req.user?.tenantId
+    );
     const result = await service.generateContent(prompt);
 
     res.json({ analysis: result });
@@ -980,7 +1015,7 @@ articleRouter.post('/ai/topic-discussion', async (req, res) => {
 });
 
 // 大纲生成
-articleRouter.post('/ai/outline', async (req, res) => {
+articleRouter.post('/ai/outline', validate({ body: outlineSchema }), async (req, res) => {
   try {
     const { title, platform, column, angle, materials, serviceId, templateId } = req.body;
     if (!title || !platform || !column) {
@@ -1002,7 +1037,11 @@ articleRouter.post('/ai/outline', async (req, res) => {
       prompt = buildOutlinePrompt({ title, platform, column, angle, materials });
     }
 
-    const service = createAIService(config);
+    const service = await createBudgetedArticleAIService(
+      config,
+      'article_outline',
+      req.user?.tenantId
+    );
     const result = await service.generateContent(prompt);
 
     res.json({ outline: result });
@@ -1052,7 +1091,11 @@ articleRouter.post('/ai/draft', async (req, res) => {
       const searchConfig = await getWebSearchAIConfig();
       if (searchConfig) {
         try {
-          const searchService = createAIService(searchConfig);
+          const searchService = await createBudgetedArticleAIService(
+            searchConfig,
+            'article_news_search',
+            req.user?.tenantId
+          );
           if (searchService.chatWithSearch) {
             const query = buildSearchQuery(title);
             const searchResult = await searchService.chatWithSearch([
@@ -1083,7 +1126,11 @@ articleRouter.post('/ai/draft', async (req, res) => {
       }
     }
 
-    const service = createAIService(config);
+    const service = await createBudgetedArticleAIService(
+      config,
+      'article_draft',
+      req.user?.tenantId
+    );
     const result = await service.generateContent(prompt);
 
     res.json({ draft: result, webSearchUsed, contextUsed });
@@ -1093,7 +1140,7 @@ articleRouter.post('/ai/draft', async (req, res) => {
 });
 
 // AI 审校
-articleRouter.post('/ai/review', async (req, res) => {
+articleRouter.post('/ai/review', validate({ body: reviewSchema }), async (req, res) => {
   try {
     const { content, serviceId, templateId } = req.body;
     if (!content) {
@@ -1113,7 +1160,11 @@ articleRouter.post('/ai/review', async (req, res) => {
       prompt = buildReviewPrompt(content);
     }
 
-    const service = createAIService(config);
+    const service = await createBudgetedArticleAIService(
+      config,
+      'article_review',
+      req.user?.tenantId
+    );
     const result = await service.generateContent(prompt);
 
     res.json({ review: result });
@@ -1123,7 +1174,7 @@ articleRouter.post('/ai/review', async (req, res) => {
 });
 
 // HKR 评估
-articleRouter.post('/ai/hkr-evaluate', async (req, res) => {
+articleRouter.post('/ai/hkr-evaluate', validate({ body: hkrEvaluateSchema }), async (req, res) => {
   try {
     const { content, serviceId, templateId } = req.body;
     if (!content) {
@@ -1143,7 +1194,11 @@ articleRouter.post('/ai/hkr-evaluate', async (req, res) => {
       prompt = buildHKRPrompt(content);
     }
 
-    const service = createAIService(config);
+    const service = await createBudgetedArticleAIService(
+      config,
+      'article_hkr_evaluate',
+      req.user?.tenantId
+    );
     const result = await service.generateContent(prompt);
 
     // 尝试解析 JSON
@@ -1189,7 +1244,11 @@ articleRouter.post('/ai/hkr-improve', async (req, res) => {
       prompt = buildHKRImprovePrompt(content, suggestions);
     }
 
-    const service = createAIService(config);
+    const service = await createBudgetedArticleAIService(
+      config,
+      'article_hkr_improve',
+      req.user?.tenantId
+    );
     const improvedContent = await service.generateContent(prompt);
 
     res.json({ content: improvedContent });
@@ -1199,7 +1258,7 @@ articleRouter.post('/ai/hkr-improve', async (req, res) => {
 });
 
 // 发布前质量检查
-articleRouter.post('/ai/quality-check', async (req, res) => {
+articleRouter.post('/ai/quality-check', validate({ body: qualityCheckSchema }), async (req, res) => {
   try {
     const { content, platform, column, articleId } = req.body;
     if (!content) {
@@ -1218,7 +1277,7 @@ articleRouter.post('/ai/quality-check', async (req, res) => {
         where: { id: articleId, userId: req.user!.id },
       });
       if (article) {
-        workflowData = JSON.parse(article.workflowData || '{}');
+        workflowData = await getEffectiveWorkflowData(article.id, article.workflowData);
         hkrScore = article.hkrScore ? JSON.parse(article.hkrScore) : null;
       }
     }

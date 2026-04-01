@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api/client';
 import { message } from 'antd';
+import { useWebSocket } from './useWebSocket';
 
 // 工作流数据接口
 export interface WorkflowData {
@@ -125,6 +126,15 @@ export function useWorkflowState(articleId: string): UseWorkflowStateReturn {
   useEffect(() => {
     restoreFromServer();
   }, [restoreFromServer]);
+
+  useWebSocket({
+    articleId,
+    onMessage: (event) => {
+      if (event.type === 'workflow:progress' && event.articleId === articleId) {
+        void restoreFromServer();
+      }
+    },
+  });
 
   // 保存到服务器
   const saveToServer = useCallback(async (step: number, data: WorkflowData) => {

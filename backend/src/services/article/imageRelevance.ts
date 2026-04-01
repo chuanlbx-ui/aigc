@@ -22,6 +22,74 @@ export interface ImageWithRelevance {
 
 export class ImageRelevanceService {
   /**
+   * 本地轻量级相关性评估（不调用 AI）
+   * 基于关键词匹配、图片元数据（alt text/tags/description）打分
+   */
+  evaluateRelevanceLocal(
+    imageMetadata: { alt?: string; tags?: string[]; description?: string; source?: string },
+    keywords: string[]
+  ): RelevanceScore {
+    if (keywords.length === 0) {
+      return { score: 0.5, confidence: 'low' };
+    }
+
+    const searchText = [
+      imageMetadata.alt || '',
+      imageMetadata.description || '',
+      ...(imageMetadata.tags || []),
+    ].join(' ').toLowerCase();
+
+    if (!searchText.trim()) {
+      return { score: 0.5, confidence: 'low' };
+    }
+
+    let matchCount = 0;
+    let totalWeight = 0;
+
+    for (const keyword of keywords) {
+      const kw = keyword.toLowerCase();
+      // 精确匹配权重更高
+      if (searchText.includes(kw)) {
+        matchCount++;
+        // alt text 中匹配权重最高
+        if ((imageMetadata.alt || '').toLowerCase().includes(kw)) {
+          totalWeight += 3;
+        }
+        // tags 中匹配
+        if ((imageMetadata.tags || []).some(t => t.toLowerCase().includes(kw))) {
+          totalWeight += 2;
+        }
+        // description 中匹配
+        if ((imageMetadata.description || '').toLowerCase().includes(kw)) {
+          totalWeight += 1;
+        }
+      }
+    }
+
+    const matchRatio = matchCount / keywords.length;
+    const maxPossibleWeight = keywords.length * 6; // 每个关键词最多 3+2+1=6
+    const weightRatio = totalWeight / maxPossibleWeight;
+
+    // 综合评分：匹配率 60% + 权重率 40%
+    const score = Math.min(1, matchRatio * 0.6 + weightRatio * 0.4);
+
+    let confidence: 'high' | 'medium' | 'low';
+    if (matchRatio >= 0.7 && totalWeight > 0) {
+      confidence = 'high';
+    } else if (matchRatio >= 0.3) {
+      confidence = 'medium';
+    } else {
+      confidence = 'low';
+    }
+
+    return {
+      score: Math.round(score * 100) / 100,
+      confidence,
+      reason: `本地匹配: ${matchCount}/${keywords.length} 关键词命中`,
+    };
+  }
+
+  /**
    * 使用 AI 评估图片与关键词的相关性
    * 通过视觉理解模型分析图片内容
    */
@@ -54,31 +122,66 @@ export class ImageRelevanceService {
 
   /**
    * 批量评估多张图片的相关性
+   * @param useLocalFirst 是否先用本地评估筛选，只对 top 候选调用 AI
    */
   async evaluateBatch(
-    images: Array<{ url: string; [key: string]: any }>,
+    images: Array<{ url: string; alt?: string; tags?: string[]; description?: string; [key: string]: any }>,
     keywords: string[],
-    context?: string
+    context?: string,
+    useLocalFirst: boolean = true
   ): Promise<ImageWithRelevance[]> {
+    if (!useLocalFirst) {
+      // 原有逻辑：全部调用 AI 评估
+      const results: ImageWithRelevance[] = [];
+      for (const image of images) {
+        const relevanceScore = await this.evaluateRelevance(image.url, keywords, context);
+        results.push({
+          imageUrl: image.url,
+          width: image.width || 0,
+          height: image.height || 0,
+          source: image.source || '',
+          relevanceScore,
+        });
+      }
+      return results.sort((a, b) => b.relevanceScore.score - a.relevanceScore.score);
+    }
+
+    // 优化逻辑：先本地评估，再对 top 候选 AI 评估
+    const localResults = images.map(image => ({
+      image,
+      localScore: this.evaluateRelevanceLocal(
+        { alt: image.alt, tags: image.tags, description: image.description },
+        keywords
+      ),
+    }));
+
+    // 按本地评分排序
+    localResults.sort((a, b) => b.localScore.score - a.localScore.score);
+
+    const AI_EVALUATE_COUNT = 2; // 只对 top-2 调用 AI
     const results: ImageWithRelevance[] = [];
 
-    for (const image of images) {
-      const relevanceScore = await this.evaluateRelevance(
-        image.url,
-        keywords,
-        context
-      );
+    for (let i = 0; i < localResults.length; i++) {
+      const { image, localScore } = localResults[i];
+      let finalScore: RelevanceScore;
+
+      if (i < AI_EVALUATE_COUNT && localScore.confidence !== 'high') {
+        // top 候选且本地评估不够确信，调用 AI 精确评估
+        finalScore = await this.evaluateRelevance(image.url, keywords, context);
+      } else {
+        // 使用本地评估结果
+        finalScore = localScore;
+      }
 
       results.push({
         imageUrl: image.url,
         width: image.width || 0,
         height: image.height || 0,
         source: image.source || '',
-        relevanceScore,
+        relevanceScore: finalScore,
       });
     }
 
-    // 按相关性分数排序（从高到低）
     return results.sort((a, b) => b.relevanceScore.score - a.relevanceScore.score);
   }
 
