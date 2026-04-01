@@ -134,10 +134,10 @@ echo "`n🚀 启动后端服务..."
 if command -v pm2 &> /dev/null; then
     if pm2 list | grep -q remotion-backend; then
         echo "  → 平滑重启 PM2 进程"
-        pm2 reload ecosystem.config.js --env production
+        pm2 reload ${RemoteBase}/ecosystem.config.js --env production
     else
         echo "  → 创建新的 PM2 进程"
-        pm2 start ecosystem.config.js --env production
+        pm2 start ${RemoteBase}/ecosystem.config.js --env production
     fi
     pm2 save
     echo "✅ PM2 进程已保存"

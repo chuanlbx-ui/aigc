@@ -88,9 +88,9 @@ echo "[6] 清理开发依赖..."
 npm prune --production
 echo "[7] 重启 PM2 服务..."
 if pm2 list | grep -q remotion-backend; then
-    pm2 reload ecosystem.config.js --env production
+    pm2 reload /www/wwwroot/aigc.wenbita.cn/ecosystem.config.js --env production
 else
-    pm2 start ecosystem.config.js --env production
+    pm2 start /www/wwwroot/aigc.wenbita.cn/ecosystem.config.js --env production
 fi
 pm2 save
 echo "[OK] 服务器部署完成"
