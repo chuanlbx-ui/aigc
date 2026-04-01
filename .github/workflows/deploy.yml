@@ -123,7 +123,7 @@ jobs:
               echo "✅ 后端服务响应正常"
             else
               echo "❌ 后端健康检查失败"
-              pm2 logs remotion-backend --lines 20 || true
+              pm2 logs remotion-backend --lines 20 | head -n 25 || true
               exit 1
             fi
 
