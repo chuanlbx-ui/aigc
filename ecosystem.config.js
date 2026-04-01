@@ -5,7 +5,7 @@ module.exports = {
       script: 'dist/index.js',
       cwd: '/www/wwwroot/aigc.wenbita.cn/backend',
       instances: 1,
-      exec_mode: 'cluster',
+      exec_mode: 'fork',
       watch: false,
       max_memory_restart: '2G',
       env: {

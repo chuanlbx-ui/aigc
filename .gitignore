@@ -46,7 +46,7 @@ deploy/ssl/*.pem
 # Docker 相关（可选）
 .docker/
 
-# 环境变量扩展（生产/远程）
+# 环境变量扩展（本地/远程）
 .env.remote
 backend/.env.remote
 backend/.env.local

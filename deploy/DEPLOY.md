@@ -19,7 +19,7 @@ docker-compose -f docker-compose.prod.yml up -d --build
 
 ### 3. 初始化数据库
 ```bash
-docker exec video-mixer-backend npx prisma db push
+docker exec video-mixer-backend npx prisma migrate deploy
 ```
 
 ## 常用命令

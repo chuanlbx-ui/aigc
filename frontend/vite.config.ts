@@ -26,16 +26,22 @@ export default defineConfig({
     },
   },
   build: {
-    // 使用esbuild压缩，更节省内存
+    // 使用 esbuild 压缩，更节省内存
     minify: 'esbuild',
-    // 禁用sourcemap减少内存
+    // 禁用 sourcemap 减少内存
     sourcemap: false,
     // 分块策略
     rollupOptions: {
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom'],
-          antd: ['antd', '@ant-design/icons'],
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('antd') || id.includes('@ant-design/icons')) {
+              return 'antd';
+            }
+            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router-dom')) {
+              return 'vendor';
+            }
+          }
         },
       },
     },

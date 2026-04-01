@@ -8,9 +8,21 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
 
       - name: Deploy to server via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -18,17 +30,20 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: 22
+          port: ${{ secrets.SERVER_PORT || 22 }}
           script: |
-            set -e
+            set -euo pipefail
             PROJECT_DIR="/www/wwwroot/aigc.wenbita.cn"
             BACKEND_DIR="$PROJECT_DIR/backend"
             FRONTEND_DIR="$PROJECT_DIR/frontend"
+            # 根据实际 Nginx 配置调整前端部署目标目录
+            WEB_ROOT="/www/wwwroot/aigc.wenbita.cn/dist"
 
             cd "$PROJECT_DIR"
 
             echo "📥 拉取最新代码..."
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
 
             # ========== 后端部署 ==========
             echo ""
@@ -36,23 +51,31 @@ jobs:
 
             echo "📦 安装后端依赖..."
             cd "$BACKEND_DIR"
-            npm install --production
+            if [ -f package-lock.json ]; then
+              npm ci --no-audit --no-fund
+            else
+              npm install --no-audit --no-fund
+            fi
 
             echo "🛠️ 生成 Prisma 客户端..."
             npx prisma generate
 
-            echo "🗄️ 同步数据库结构..."
-            npx prisma db push --skip-generate
+            echo "🗄️ 部署数据库迁移..."
+            npx prisma migrate deploy
 
             echo "🏗️ 构建后端..."
             npm run build
 
             echo "🔄 重启 PM2 服务..."
             if pm2 list | grep -q remotion-backend; then
-              pm2 restart remotion-backend
+              pm2 reload ecosystem.config.js --env production
             else
-              pm2 start dist/index.js --name remotion-backend
+              pm2 start ecosystem.config.js --env production
             fi
+            pm2 save
+
+            echo "🧹 清理后端开发依赖..."
+            npm prune --production
 
             # ========== 前端部署 ==========
             echo ""
@@ -60,14 +83,38 @@ jobs:
 
             echo "📦 安装前端依赖..."
             cd "$FRONTEND_DIR"
-            npm install
+            if [ -f package-lock.json ]; then
+              npm ci --no-audit --no-fund
+            else
+              npm install --no-audit --no-fund
+            fi
 
             echo "🏗️ 构建前端..."
             npm run build
 
-            echo "📤 复制前端构建文件到前端目录..."
-            # 删除旧的静态文件并复制新的
-            rm -rf "$FRONTEND_DIR/dist" 2>/dev/null || true
-            cp -r "$FRONTEND_DIR/dist" "$FRONTEND_DIR/"
+            echo "📤 复制前端构建文件到 Web 目录..."
+            if [ -d "$FRONTEND_DIR/dist" ]; then
+              rm -rf "$WEB_ROOT" 2>/dev/null || true
+              cp -r "$FRONTEND_DIR/dist" "$WEB_ROOT"
+              echo "✅ 前端文件已部署到 $WEB_ROOT"
+            else
+              echo "❌ 前端构建产物不存在: $FRONTEND_DIR/dist"
+              exit 1
+            fi
 
+            # ========== 健康检查 ==========
+            echo ""
+            echo "========== 健康检查 =========="
+            echo "⏳ 等待服务启动..."
+            sleep 5
+
+            # 后端健康检查
+            if curl -sf http://localhost:3001/api/health > /dev/null 2>&1; then
+              echo "✅ 后端服务响应正常"
+            else
+              echo "❌ 后端健康检查失败"
+              exit 1
+            fi
+
+            echo ""
             echo "✅ 部署完成！"

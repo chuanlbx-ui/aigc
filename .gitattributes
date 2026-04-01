@@ -1,0 +1,50 @@
+# 自动处理行尾换行符
+* text=auto
+
+# Shell 脚本强制使用 LF
+*.sh text eol=lf
+
+# PowerShell 脚本强制使用 CRLF（Windows 标准）
+*.ps1 text eol=crlf
+
+# GitHub Actions / Docker / K8s 配置强制使用 LF
+*.yml text eol=lf
+*.yaml text eol=lf
+
+# Web 相关文件强制使用 LF
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+
+# 配置文件强制使用 LF
+*.conf text eol=lf
+*.config text eol=lf
+*.ini text eol=lf
+*.env text eol=lf
+*.env.* text eol=lf
+
+# 文档文件
+*.md text eol=lf
+*.txt text eol=lf
+
+# 二进制文件（禁止自动转换）
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.pdf binary
+*.zip binary
+*.gz binary
+*.tar binary
+*.db binary
+*.sqlite binary

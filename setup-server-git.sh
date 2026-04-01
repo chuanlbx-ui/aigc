@@ -2,7 +2,7 @@
 # 在服务器上执行此脚本以配置 Git 工作流
 # 使用方法：将此脚本上传到服务器，然后执行 bash setup-server-git.sh
 
-set -e
+set -euo pipefail
 
 REMOTE_BASE="/www/wwwroot/aigc.wenbita.cn"
 GITHUB_REPO="https://github.com/chuanlbx-ui/aigc.git"
@@ -74,7 +74,7 @@ if ! git diff-index --quiet HEAD -- 2>/dev/null; then
     echo "  → 本地修改已暂存"
 fi
 
-git pull origin main
+git reset --hard origin/main
 echo "✅ 代码已更新到最新版本"
 
 # 显示当前状态
@@ -95,6 +95,7 @@ if command -v pm2 &> /dev/null; then
     else
         echo "⚠️  remotion-backend 进程不存在"
         echo "  → 提示：需要手动启动 PM2 进程"
+        echo "     pm2 start ecosystem.config.js --env production"
     fi
 else
     echo "⚠️  PM2 未安装"
@@ -107,7 +108,7 @@ echo ""
 echo "💡 后续部署流程："
 echo "  1. 本地执行: git push origin main"
 echo "  2. 服务器执行: cd $REMOTE_BASE && git pull origin main"
-echo "  3. 重启服务: cd backend && npm install && npm run build && pm2 restart remotion-backend"
+echo "  3. 重启服务: cd backend && npm install && npm run build && pm2 reload ecosystem.config.js"
 echo ""
 echo "或使用本地一键部署脚本："
 echo "  .\deploy.ps1"

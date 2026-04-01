@@ -1,4 +1,4 @@
-# 代码同步到服务器脚本
+﻿# 代码同步到服务器脚本
 param(
     [string]$ServerIP = "162.14.114.224",
     [string]$ServerUser = "root",
@@ -73,7 +73,32 @@ if ($sshPortParam) {
     $sshTarget = "-p $SSHPort ${ServerUser}@${ServerIP}"
 }
 
+$nginxScript = if (-not $SkipNginx) {
+@"
+echo "`n🌐 检查 Nginx 配置..."
+
+NGINX_CONF=""
+if [ -f /etc/nginx/conf.d/aigc.wenbita.cn.conf ]; then
+    NGINX_CONF="/etc/nginx/conf.d/aigc.wenbita.cn.conf"
+elif [ -f /etc/nginx/sites-enabled/aigc.wenbita.cn ]; then
+    NGINX_CONF="/etc/nginx/sites-enabled/aigc.wenbita.cn"
+elif [ -f /www/server/panel/vhost/nginx/aigc.wenbita.cn.conf ]; then
+    NGINX_CONF="/www/server/panel/vhost/nginx/aigc.wenbita.cn.conf"
+fi
+
+if [ -n "\$NGINX_CONF" ]; then
+    echo "  → 找到 Nginx 配置文件：\$NGINX_CONF"
+    nginx -t && nginx -s reload && echo "✅ Nginx 已重启"
+else
+    echo "ℹ️  未找到 Nginx 配置文件，跳过重启"
+fi
+"@
+} else {
+    'echo "ℹ️  跳过 Nginx 重启"'
+}
+
 $remoteCommands = @"
+set -euo pipefail
 cd ${RemoteBase}
 
 echo "📦 当前目录结构："
@@ -82,29 +107,37 @@ ls -la
 # 安装后端依赖（如果需要）
 cd backend
 echo "`n🔧 安装后端依赖..."
-npm install --production
+if [ -f package-lock.json ]; then
+    npm ci --no-audit --no-fund
+else
+    npm install --no-audit --no-fund
+fi
 
 echo "`n🛠️ 生成 Prisma 客户端..."
 npx prisma generate
 
 # 构建后端（如果存在构建脚本）
 if [ -f package.json ]; then
-    if grep -q '"build"' package.json; then
+    if grep -q '"build"' package.json 2>/dev/null; then
         echo "`n🏗️  构建后端..."
         npm run build
+    else
+        echo "`nℹ️  package.json 中未找到 build 脚本，跳过构建"
     fi
 fi
+
+echo "`n🧹 清理后端开发依赖..."
+npm prune --production
 
 # 启动后端（使用 PM2）
 echo "`n🚀 启动后端服务..."
 if command -v pm2 &> /dev/null; then
-    # 检查进程是否已存在
     if pm2 list | grep -q remotion-backend; then
-        echo "  → 重启 PM2 进程"
-        pm2 restart remotion-backend
+        echo "  → 平滑重启 PM2 进程"
+        pm2 reload ecosystem.config.js --env production
     else
         echo "  → 创建新的 PM2 进程"
-        pm2 start npm --name remotion-backend -- start
+        pm2 start ecosystem.config.js --env production
     fi
     pm2 save
     echo "✅ PM2 进程已保存"
@@ -112,33 +145,12 @@ else
     echo "⚠️  未安装 PM2，使用 nohup 启动"
     pkill -f 'node.*dist/index.js' || true
     cd ${RemoteBase}/backend
+    mkdir -p logs
     nohup npm start > logs/backend.log 2>&1 &
     echo \$! > .pm2/remotion-backend.pid
 fi
 
-# 如果需要重启前端 Nginx
-if [ "$Using:SkipNginx" -eq \$false ]; then
-    echo "`n🌐 检查 Nginx 配置..."
-    
-    # 尝试多个可能的 Nginx 配置路径
-    NGINX_CONF=""
-    if [ -f /etc/nginx/conf.d/aigc.wenbita.cn.conf ]; then
-        NGINX_CONF="/etc/nginx/conf.d/aigc.wenbita.cn.conf"
-    elif [ -f /etc/nginx/sites-enabled/aigc.wenbita.cn ]; then
-        NGINX_CONF="/etc/nginx/sites-enabled/aigc.wenbita.cn"
-    elif [ -f /www/server/panel/vhost/nginx/aigc.wenbita.cn.conf ]; then
-        NGINX_CONF="/www/server/panel/vhost/nginx/aigc.wenbita.cn.conf"  # 宝塔默认路径
-    fi
-    
-    if [ -n "\$NGINX_CONF" ]; then
-        echo "  → 找到 Nginx 配置文件：\$NGINX_CONF"
-        nginx -t && nginx -s reload && echo "✅ Nginx 已重启"
-    else
-        echo "ℹ️  未找到 Nginx 配置文件，跳过重启"
-    fi
-else
-    echo "ℹ️  跳过 Nginx 重启"
-fi
+$nginxScript
 
 echo "`n✅ 部署完成！"
 "@

@@ -1,4 +1,4 @@
-# deploy.ps1 - 一键部署脚本：本地 -> GitHub -> 服务器
+﻿# deploy.ps1 - 一键部署脚本：本地 -> GitHub -> 服务器
 param(
     [string]$ServerIP = "162.14.114.224",
     [string]$ServerUser = "root",
@@ -66,22 +66,31 @@ if ($SSHPort -ne 22) {
 $sshArgs += $sshTarget
 
 $remoteScript = @'
-set -e
+set -euo pipefail
 cd /www/wwwroot/aigc.wenbita.cn
 echo "[1] 拉取最新代码..."
-git pull origin main
+git fetch origin main
+git reset --hard origin/main
 echo "[2] 安装后端依赖..."
 cd backend
-npm install --production
+if [ -f package-lock.json ]; then
+    npm ci --no-audit --no-fund
+else
+    npm install --no-audit --no-fund
+fi
 echo "[3] 生成 Prisma 客户端..."
 npx prisma generate
-echo "[4] 构建后端..."
+echo "[4] 部署数据库迁移..."
+npx prisma migrate deploy
+echo "[5] 构建后端..."
 npm run build
-echo "[5] 重启 PM2 服务..."
+echo "[6] 清理开发依赖..."
+npm prune --production
+echo "[7] 重启 PM2 服务..."
 if pm2 list | grep -q remotion-backend; then
-    pm2 restart remotion-backend
+    pm2 reload ecosystem.config.js --env production
 else
-    pm2 start dist/index.js --name remotion-backend
+    pm2 start ecosystem.config.js --env production
 fi
 pm2 save
 echo "[OK] 服务器部署完成"
