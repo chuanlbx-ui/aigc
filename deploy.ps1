@@ -81,7 +81,7 @@ fi
 echo "[3] 生成 Prisma 客户端..."
 npx prisma generate
 echo "[4] 部署数据库迁移..."
-npx prisma migrate deploy
+npx prisma migrate deploy || echo "[WARN] 数据库迁移失败，继续部署..."
 echo "[5] 构建后端..."
 npm run build
 echo "[6] 清理开发依赖..."
