@@ -14,7 +14,90 @@ const WX_PAY_CONFIG = {
   apiKey: process.env.WX_PAY_API_KEY || '',
   notifyUrl: process.env.WX_PAY_NOTIFY_URL || '',
   apiV3Key: process.env.WX_PAY_API_V3_KEY || '',
+  publicKey: process.env.WX_PAY_PUBLIC_KEY || '', // 微信支付平台公钥（用于验证回调签名）
 };
+
+// 微信支付回调签名验证结果
+export interface WxPayVerifyResult {
+  valid: boolean;
+  error?: string;
+}
+
+/**
+ * 验证微信支付回调签名 (V3)
+ * @param timestamp 时间戳
+ * @param nonce 随机字符串
+ * @param body 请求体
+ * @param signature 签名
+ */
+export function verifyWxPaySignature(
+  timestamp: string,
+  nonce: string,
+  body: string,
+  signature: string
+): WxPayVerifyResult {
+  if (!WX_PAY_CONFIG.publicKey) {
+    return { valid: false, error: '微信支付公钥未配置' };
+  }
+
+  try {
+    // 签名原文: timestamp\nnonce\nbody\n
+    const message = `${timestamp}\n${nonce}\n${body}\n`;
+    
+    const verify = crypto.createVerify('RSA-SHA256');
+    verify.update(message);
+    
+    const isValid = verify.verify(WX_PAY_CONFIG.publicKey, signature, 'base64');
+    
+    return { valid: isValid, error: isValid ? undefined : '签名验证失败' };
+  } catch (error: any) {
+    return { valid: false, error: `签名验证异常: ${error.message}` };
+  }
+}
+
+/**
+ * 解密微信支付回调加密数据 (AES-256-GCM)
+ * @param ciphertext 密文 (Base64)
+ * @param nonce 随机串 (Base64)
+ * @param associatedData 附加数据
+ */
+export function decryptWxPayResource(
+  ciphertext: string,
+  nonce: string,
+  associatedData: string
+): { success: boolean; data?: any; error?: string } {
+  if (!WX_PAY_CONFIG.apiV3Key) {
+    return { success: false, error: 'API V3 密钥未配置' };
+  }
+
+  try {
+    // 解密
+    const key = Buffer.from(WX_PAY_CONFIG.apiV3Key, 'utf-8');
+    const cipherText = Buffer.from(ciphertext, 'base64');
+    const nonceBuffer = Buffer.from(nonce, 'base64');
+    const aad = Buffer.from(associatedData || '', 'utf-8');
+
+    // 提取 GCM 认证标签（最后 16 字节）
+    const authTag = cipherText.slice(-16);
+    const encryptedData = cipherText.slice(0, -16);
+
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, nonceBuffer);
+    decipher.setAAD(aad);
+    decipher.setAuthTag(authTag);
+
+    const decrypted = Buffer.concat([
+      decipher.update(encryptedData),
+      decipher.final()
+    ]);
+
+    const jsonStr = decrypted.toString('utf-8');
+    const data = JSON.parse(jsonStr);
+
+    return { success: true, data };
+  } catch (error: any) {
+    return { success: false, error: `数据解密失败: ${error.message}` };
+  }
+}
 
 // 订单状态
 export type OrderStatus = 'pending' | 'paid' | 'failed' | 'refunded' | 'cancelled';
