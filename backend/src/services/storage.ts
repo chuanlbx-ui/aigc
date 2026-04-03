@@ -1,5 +1,11 @@
 import fs from 'fs';
 import path from 'path';
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
+} from '@aws-sdk/client-s3';
 
 // 存储服务接口
 export interface StorageService {
@@ -48,56 +54,142 @@ export class LocalStorage implements StorageService {
   }
 }
 
-// S3 兼容存储实现（阿里云 OSS / 腾讯云 COS 等）
+// S3 兼容存储实现（阿里云 OSS / 腾讯云 COS / AWS S3 等）
 export class S3Storage implements StorageService {
-  private endpoint: string;
+  private client: S3Client;
   private bucket: string;
-  private accessKey: string;
-  private secretKey: string;
+  private region: string;
+  private endpoint: string;
+  private baseUrl: string;
 
   constructor(config: {
     endpoint: string;
     bucket: string;
-    accessKey: string;
-    secretKey: string;
+    region: string;
+    accessKeyId: string;
+    secretAccessKey: string;
   }) {
-    this.endpoint = config.endpoint;
     this.bucket = config.bucket;
-    this.accessKey = config.accessKey;
-    this.secretKey = config.secretKey;
+    this.region = config.region || 'ap-northeast-1';
+    this.endpoint = config.endpoint || '';
+
+    // 配置 S3 客户端
+    this.client = new S3Client({
+      region: this.region,
+      endpoint: config.endpoint || undefined,
+      credentials: {
+        accessKeyId: config.accessKeyId,
+        secretAccessKey: config.secretAccessKey,
+      },
+      // 强制使用路径式寻址（适用于阿里云 OSS、腾讯云 COS 等）
+      forcePathStyle: true,
+    });
+
+    // 生成基础 URL
+    this.baseUrl = config.endpoint
+      ? `${config.endpoint}/${config.bucket}`
+      : `https://${config.bucket}.s3.${this.region}.amazonaws.com`;
   }
 
   async upload(filePath: string, content: Buffer): Promise<string> {
-    // TODO: 实现 S3 上传（需要安装 @aws-sdk/client-s3）
-    console.log(`[S3] 上传文件: ${filePath}`);
-    throw new Error('S3 存储需要安装 @aws-sdk/client-s3');
+    try {
+      const command = new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: filePath,
+        Body: content,
+      });
+
+      await this.client.send(command);
+      console.log(`[S3] 上传成功: ${filePath}`);
+      return this.getUrl(filePath);
+    } catch (error) {
+      console.error(`[S3] 上传失败: ${filePath}`, error);
+      throw new Error(`S3 上传失败: ${(error as Error).message}`);
+    }
   }
 
   async download(filePath: string): Promise<Buffer> {
-    // TODO: 实现 S3 下载
-    throw new Error('S3 存储需要安装 @aws-sdk/client-s3');
+    try {
+      const command = new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: filePath,
+      });
+
+      const response = await this.client.send(command);
+
+      if (!response.Body) {
+        throw new Error('S3 下载失败：响应体为空');
+      }
+
+      // 将流转换为 Buffer
+      const chunks: Uint8Array[] = [];
+      for await (const chunk of response.Body as AsyncIterable<Uint8Array>) {
+        chunks.push(chunk);
+      }
+
+      return Buffer.concat(chunks);
+    } catch (error) {
+      console.error(`[S3] 下载失败: ${filePath}`, error);
+      throw new Error(`S3 下载失败: ${(error as Error).message}`);
+    }
   }
 
   async delete(filePath: string): Promise<void> {
-    // TODO: 实现 S3 删除
-    throw new Error('S3 存储需要安装 @aws-sdk/client-s3');
+    try {
+      const command = new DeleteObjectCommand({
+        Bucket: this.bucket,
+        Key: filePath,
+      });
+
+      await this.client.send(command);
+      console.log(`[S3] 删除成功: ${filePath}`);
+    } catch (error) {
+      console.error(`[S3] 删除失败: ${filePath}`, error);
+      throw new Error(`S3 删除失败: ${(error as Error).message}`);
+    }
   }
 
   getUrl(filePath: string): string {
-    return `${this.endpoint}/${this.bucket}/${filePath}`;
+    return `${this.baseUrl}/${filePath}`;
   }
+}
+
+// 检查 S3 环境变量是否配置
+function isS3Configured(): boolean {
+  return Boolean(
+    process.env.S3_BUCKET &&
+    process.env.S3_REGION &&
+    process.env.S3_ACCESS_KEY_ID &&
+    process.env.S3_SECRET_ACCESS_KEY
+  );
 }
 
 // 存储服务工厂
 export function createStorageService(): StorageService {
   const storageType = process.env.STORAGE_TYPE || 'local';
 
-  if (storageType === 's3') {
+  // 优先检查 S3 环境变量配置
+  if (storageType === 's3' || isS3Configured()) {
+    // 验证必要的环境变量
+    if (!process.env.S3_BUCKET) {
+      throw new Error('S3 配置错误：缺少 S3_BUCKET 环境变量');
+    }
+    if (!process.env.S3_REGION) {
+      throw new Error('S3 配置错误：缺少 S3_REGION 环境变量');
+    }
+    if (!process.env.S3_ACCESS_KEY_ID) {
+      throw new Error('S3 配置错误：缺少 S3_ACCESS_KEY_ID 环境变量');
+    }
+    if (!process.env.S3_SECRET_ACCESS_KEY) {
+      throw new Error('S3 配置错误：缺少 S3_SECRET_ACCESS_KEY 环境变量');
+    }
+
     return new S3Storage({
       endpoint: process.env.S3_ENDPOINT || '',
-      bucket: process.env.S3_BUCKET || '',
-      accessKey: process.env.S3_ACCESS_KEY || '',
-      secretKey: process.env.S3_SECRET_KEY || '',
+      bucket: process.env.S3_BUCKET!,
+      region: process.env.S3_REGION!,
+      accessKeyId: process.env.S3_ACCESS_KEY_ID!,
+      secretAccessKey: process.env.S3_SECRET_ACCESS_KEY!,
     });
   }
 
