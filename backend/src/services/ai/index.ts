@@ -1,4 +1,5 @@
 import { PrismaClient, AIServiceConfig as PrismaAIServiceConfig } from '@prisma/client';
+import { logger } from '../logger.js';
 
 const prisma = new PrismaClient();
 
@@ -168,7 +169,7 @@ export async function createAIServiceWithBudget(
   }
 
   if (budgetCheck.warning) {
-    console.warn(`[AI Budget] ${budgetCheck.warning}`);
+    logger.warn(`[AI Budget] ${budgetCheck.warning}`);
   }
 
   const service = createAIService(config);
@@ -381,7 +382,7 @@ export class SmartRouter {
     // 如果最优选错误率过高（>50%），降级到默认
     const bestPerf = perfMap.get(best.provider);
     if (bestPerf && bestPerf.callCount >= 5 && bestPerf.errorRate > 0.5) {
-      console.warn(`[SmartRouter] ${best.provider} 错误率 ${(bestPerf.errorRate * 100).toFixed(0)}%，降级到默认模型`);
+      logger.warn(`[SmartRouter] ${best.provider} 错误率 ${(bestPerf.errorRate * 100).toFixed(0)}%，降级到默认模型`);
       return getDefaultAIConfig();
     }
 
@@ -403,7 +404,7 @@ export class SmartRouter {
       return await createAIServiceWithBudget(primary, feature, tenantId);
     } catch (err) {
       // 首选失败，尝试默认模型
-      console.warn(`[SmartRouter] 首选 ${primary.provider} 不可用，降级到默认模型`);
+      logger.warn(`[SmartRouter] 首选 ${primary.provider} 不可用，降级到默认模型`);
       const fallback = await getDefaultAIConfig();
       if (!fallback || fallback.provider === primary.provider) throw err;
       return await createAIServiceWithBudget(fallback, feature, tenantId);

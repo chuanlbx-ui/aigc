@@ -35,6 +35,7 @@ import { websocketService } from '../services/websocket.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import type { WorkflowData } from '../services/article/workflow.js';
+import { logger } from '../services/logger.js';
 
 // 知识库文档搜索结果类型
 interface KnowledgeSearchResult {
@@ -403,7 +404,7 @@ articleRouter.get('/', async (req, res) => {
 
     res.json({ articles, total, page: parseInt(page as string), pageSize: parseInt(pageSize as string) });
   } catch (error) {
-    console.error('获取文章列表失败:', error);
+    logger.error({ err: error }, '获取文章列表失败');
     res.status(500).json({ error: '获取文章列表失败' });
   }
 });

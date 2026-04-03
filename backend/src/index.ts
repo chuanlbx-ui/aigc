@@ -38,6 +38,7 @@ import { PrismaClient } from '@prisma/client';
 import { publishScheduler } from './services/publish/scheduler.js';
 import { publishQueue } from './services/publish/publishQueue.js';
 import { websocketService } from './services/websocket.js';
+import { logger } from './services/logger.js';
 
 const prisma = new PrismaClient();
 
@@ -52,17 +53,17 @@ app.use(cors());
 
 // 静态文件服务：提供 public/generated 目录访问
 const generatedDir = path.resolve(process.cwd(), '..', '..', 'public', 'generated');
-console.log(`[静态文件] generated 目录: ${generatedDir}`);
+logger.info(`[静态文件] generated 目录: ${generatedDir}`);
 app.use('/generated', express.static(generatedDir));
 
 // 静态文件服务：提供智能配图目录访问
 const smartImagesDir = path.resolve(process.cwd(), 'uploads', 'smart-images');
-console.log(`[静态文件] smart-images 目录: ${smartImagesDir}`);
+logger.info(`[静态文件] smart-images 目录: ${smartImagesDir}`);
 app.use('/uploads/smart-images', express.static(smartImagesDir));
 
 // 静态文件服务：提供海报目录访问
 const postersDir = path.resolve(process.cwd(), 'uploads', 'posters');
-console.log(`[静态文件] posters 目录: ${postersDir}`);
+logger.info(`[静态文件] posters 目录: ${postersDir}`);
 app.use('/uploads/posters', express.static(postersDir));
 
 app.use(express.json({ limit: '500mb' }));
@@ -143,22 +144,22 @@ async function checkDatabaseConnection() {
   // 隐藏密码
   const maskedUrl = dbUrl.replace(/:\/\/[^:]+:([^@]+)@/, '://***:***@');
   
-  console.log(`[数据库] 连接地址: ${maskedUrl}`);
+  logger.info(`[数据库] 连接地址: ${maskedUrl}`);
   
   try {
     // 测试连接
     await prisma.$queryRaw`SELECT 1`;
-    console.log('[数据库] 连接状态: ✅ 连接成功');
+    logger.info('[数据库] 连接状态: ✅ 连接成功');
     return true;
   } catch (error: any) {
-    console.error('[数据库] 连接状态: ❌ 连接失败');
-    console.error(`[数据库] 错误信息: ${error.message}`);
+    logger.error(`[数据库] 连接状态: ❌ 连接失败`);
+    logger.error(`[数据库] 错误信息: ${error.message}`);
     return false;
   }
 }
 
 const server = app.listen(PORT, async () => {
-  console.log(`后端服务运行在 http://localhost:${PORT}`);
+  logger.info(`后端服务运行在 http://localhost:${PORT}`);
   
   // 检测数据库连接
   await checkDatabaseConnection();
@@ -172,14 +173,14 @@ websocketService.init(server);
 
 // 优雅关闭
 process.on('SIGTERM', () => {
-  console.log('收到 SIGTERM 信号，正在关闭服务...');
+  logger.info('收到 SIGTERM 信号，正在关闭服务...');
   publishScheduler.stop();
   websocketService.close();
   process.exit(0);
 });
 
 process.on('SIGINT', () => {
-  console.log('收到 SIGINT 信号，正在关闭服务...');
+  logger.info('收到 SIGINT 信号，正在关闭服务...');
   publishScheduler.stop();
   websocketService.close();
   process.exit(0);
