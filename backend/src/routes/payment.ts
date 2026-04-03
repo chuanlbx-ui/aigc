@@ -3,6 +3,7 @@
  */
 
 import { Router } from 'express';
+import { z } from 'zod';
 import {
   createPaymentOrder,
   getOrderStatus,
@@ -13,16 +14,130 @@ import {
   decryptWxPayResource,
 } from '../services/payment.js';
 
+// ========== Zod 验证 Schema ==========
+
+// 创建订单请求验证 Schema
+const createOrderSchema = z.object({
+  tenantId: z.string().min(1, '租户ID不能为空'),
+  planName: z.string().min(1, '套餐名称不能为空'),
+  amount: z.coerce.number().positive('金额必须为正数'),
+  description: z.string().optional(),
+});
+
+// 订单 ID 参数验证 Schema
+const orderIdSchema = z.object({
+  id: z.string().min(1, '订单ID不能为空'),
+});
+
+// 租户 ID 参数验证 Schema
+const tenantIdSchema = z.object({
+  tenantId: z.string().min(1, '租户ID不能为空'),
+});
+
+// 订单列表查询参数验证 Schema
+const orderListQuerySchema = z.object({
+  page: z.coerce.number().int().positive().optional(),
+  pageSize: z.coerce.number().int().positive().max(100).optional(),
+});
+
+// 微信支付回调验证 Schema
+const paymentNotifySchema = z.object({
+  resource: z.object({
+    ciphertext: z.string().min(1, '加密数据不能为空'),
+    nonce: z.string().min(1, '随机字符串不能为空'),
+    associated_data: z.string().optional(),
+  }).optional(),
+  out_trade_no: z.string().optional(),
+  transaction_id: z.string().optional(),
+  trade_state: z.string().optional(),
+});
+
+// 模拟支付订单 ID 参数验证 Schema
+const mockPayOrderIdSchema = z.object({
+  orderId: z.string().min(1, '订单ID不能为空'),
+});
+
+// ========== 验证中间件 ==========
+
+// 扩展 Request 接口以包含验证后的数据
+declare global {
+  namespace Express {
+    interface Request {
+      validatedBody?: any;
+      validatedParams?: any;
+      validatedQuery?: any;
+    }
+  }
+}
+
+// 验证请求体的通用函数
+function validateBody<T>(schema: z.ZodSchema<T>) {
+  return (req: any, res: any, next: any) => {
+    const result = schema.safeParse(req.body);
+    if (!result.success) {
+      const errors = result.error.issues.map(issue => ({
+        field: issue.path.join('.'),
+        message: issue.message,
+      }));
+      return res.status(400).json({
+        success: false,
+        error: '请求参数验证失败',
+        details: errors,
+      });
+    }
+    req.validatedBody = result.data;
+    next();
+  };
+}
+
+// 验证路由参数的通用函数
+function validateParams<T>(schema: z.ZodSchema<T>) {
+  return (req: any, res: any, next: any) => {
+    const result = schema.safeParse(req.params);
+    if (!result.success) {
+      const errors = result.error.issues.map(issue => ({
+        field: issue.path.join('.'),
+        message: issue.message,
+      }));
+      return res.status(400).json({
+        success: false,
+        error: '路由参数验证失败',
+        details: errors,
+      });
+    }
+    req.validatedParams = result.data;
+    next();
+  };
+}
+
+// 验证查询参数的通用函数
+function validateQuery<T>(schema: z.ZodSchema<T>) {
+  return (req: any, res: any, next: any) => {
+    const result = schema.safeParse(req.query);
+    if (!result.success) {
+      const errors = result.error.issues.map(issue => ({
+        field: issue.path.join('.'),
+        message: issue.message,
+      }));
+      return res.status(400).json({
+        success: false,
+        error: '查询参数验证失败',
+        details: errors,
+      });
+    }
+    req.validatedQuery = result.data;
+    next();
+  };
+}
+
+// ========== 路由处理函数 ==========
+
 const router = Router();
 
 // 创建支付订单
-router.post('/create-order', async (req, res) => {
+router.post('/create-order', validateBody(createOrderSchema), async (req, res) => {
   try {
-    const { tenantId, planName, amount, description } = req.body;
-
-    if (!tenantId || !planName || !amount) {
-      return res.status(400).json({ error: '参数不完整' });
-    }
+    const { tenantId, planName, amount, description } = req.validatedBody;
 
     const result = await createPaymentOrder(
       tenantId,
@@ -38,9 +153,9 @@ router.post('/create-order', async (req, res) => {
 });
 
 // 查询订单状态
-router.get('/order/:id', async (req, res) => {
+router.get('/order/:id', validateParams(orderIdSchema), async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id } = req.validatedParams;
     const order = await getOrderStatus(id);
     res.json(order);
   } catch (error: any) {
@@ -49,15 +164,15 @@ router.get('/order/:id', async (req, res) => {
 });
 
 // 获取订单列表
-router.get('/orders/:tenantId', async (req, res) => {
+router.get('/orders/:tenantId', validateParams(tenantIdSchema), validateQuery(orderListQuerySchema), async (req, res) => {
   try {
-    const { tenantId } = req.params;
-    const { page, pageSize } = req.query;
+    const { tenantId } = req.validatedParams;
+    const { page = 1, pageSize = 10 } = req.validatedQuery || {};
 
     const result = await getOrderList(
       tenantId,
-      page ? parseInt(page as string) : 1,
-      pageSize ? parseInt(pageSize as string) : 10
+      page,
+      pageSize
     );
 
     res.json(result);
@@ -67,7 +182,7 @@ router.get('/orders/:tenantId', async (req, res) => {
 });
 
 // 微信支付回调
-router.post('/notify', async (req, res) => {
+router.post('/notify', validateBody(paymentNotifySchema), async (req, res) => {
   try {
     // 微信支付 V3 回调签名验证
     // 微信支付会发送以下 HTTP 头: 
@@ -134,9 +249,9 @@ router.post('/notify', async (req, res) => {
 
 // 模拟支付成功（仅开发环境）
 if (process.env.NODE_ENV !== 'production') {
-  router.post('/mock-pay/:orderId', async (req, res) => {
+  router.post('/mock-pay/:orderId', validateParams(mockPayOrderIdSchema), async (req, res) => {
     try {
-      const { orderId } = req.params;
+      const { orderId } = req.validatedParams;
       const result = await mockPaymentSuccess(orderId);
       res.json(result);
     } catch (error: any) {
