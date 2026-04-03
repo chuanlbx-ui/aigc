@@ -1010,6 +1010,7 @@ articleRouter.post('/ai/topic-discussion', validate({ body: topicDiscussionSchem
 
     res.json({ analysis: result });
   } catch (error: any) {
+    console.error('选题讨论失败:', error);
     res.status(500).json({ error: error.message || '选题讨论失败' });
   }
 });
@@ -1046,6 +1047,7 @@ articleRouter.post('/ai/outline', validate({ body: outlineSchema }), async (req,
 
     res.json({ outline: result });
   } catch (error: any) {
+    console.error('大纲生成失败:', error);
     res.status(500).json({ error: error.message || '大纲生成失败' });
   }
 });
@@ -1135,6 +1137,7 @@ articleRouter.post('/ai/draft', async (req, res) => {
 
     res.json({ draft: result, webSearchUsed, contextUsed });
   } catch (error: any) {
+    console.error('初稿生成失败:', error);
     res.status(500).json({ error: error.message || '初稿生成失败' });
   }
 });
@@ -1169,6 +1172,7 @@ articleRouter.post('/ai/review', validate({ body: reviewSchema }), async (req, r
 
     res.json({ review: result });
   } catch (error: any) {
+    console.error('AI 审校失败:', error);
     res.status(500).json({ error: error.message || 'AI 审校失败' });
   }
 });
@@ -1209,10 +1213,13 @@ articleRouter.post('/ai/hkr-evaluate', validate({ body: hkrEvaluateSchema }), as
         res.json({ score, raw: result });
         return;
       }
-    } catch {}
+    } catch (parseError) {
+      console.error('HKR 评估结果 JSON 解析失败:', parseError);
+    }
 
     res.json({ raw: result });
   } catch (error: any) {
+    console.error('HKR 评估失败:', error);
     res.status(500).json({ error: error.message || 'HKR 评估失败' });
   }
 });
@@ -1253,6 +1260,7 @@ articleRouter.post('/ai/hkr-improve', async (req, res) => {
 
     res.json({ content: improvedContent });
   } catch (error: any) {
+    console.error('HKR 改进失败:', error);
     res.status(500).json({ error: error.message || 'HKR 改进失败' });
   }
 });
@@ -1308,6 +1316,7 @@ articleRouter.post('/ai/quick-quality-check', async (req, res) => {
     const result = quickQualityCheck(content);
     res.json(result);
   } catch (error: any) {
+    console.error('质量检查失败:', error);
     res.status(500).json({ error: error.message || '质量检查失败' });
   }
 });
@@ -1326,9 +1335,11 @@ articleRouter.post('/ai/check-similarity', async (req, res) => {
     const result = await checkSimilarity(title, content || '', excludeId);
     res.json(result);
   } catch (error: any) {
-    res.status(500).json({ error: error.message || '相似度检测失败' });
+    console.error('质量检查失败:', error);
+    res.status(500).json({ error: error.message || '质量检查失败' });
   }
 });
+
 
 // 检查选题相似度
 articleRouter.post('/ai/check-topic-similarity', async (req, res) => {
@@ -1342,6 +1353,7 @@ articleRouter.post('/ai/check-topic-similarity', async (req, res) => {
     const result = await checkTopicSimilarity(topic, excludeId);
     res.json(result);
   } catch (error: any) {
+    console.error('选题相似度检测失败:', error);
     res.status(500).json({ error: error.message || '选题相似度检测失败' });
   }
 });
@@ -1372,6 +1384,7 @@ articleRouter.post('/:id/embed', async (req, res) => {
     await saveArticleEmbedding(article.id, embedding);
     res.json({ success: true, dimension: embedding.length });
   } catch (error: any) {
+    console.error('文章向量化失败:', error);
     res.status(500).json({ error: error.message || '向量化失败' });
   }
 });
@@ -1383,6 +1396,7 @@ articleRouter.post('/batch-embed', async (req, res) => {
     const result = await batchEmbedArticles(50);
     res.json(result);
   } catch (error: any) {
+    console.error('批量文章向量化失败:', error);
     res.status(500).json({ error: error.message || '批量向量化失败' });
   }
 });
@@ -1394,6 +1408,7 @@ articleRouter.get('/embed-status', async (req, res) => {
     const status = await getEmbeddingStatus();
     res.json(status);
   } catch (error: any) {
+    console.error('获取向量化状态失败:', error);
     res.status(500).json({ error: error.message || '获取状态失败' });
   }
 });
@@ -1485,6 +1500,7 @@ articleRouter.post('/ai/search-knowledge', async (req, res) => {
 
     res.json({ results, searchMode });
   } catch (error: any) {
+    console.error('知识库搜索失败:', error);
     res.status(500).json({ error: error.message || '搜索失败' });
   }
 });
@@ -1495,6 +1511,7 @@ articleRouter.get('/ai/services', async (req, res) => {
     const services = await getAllAIConfigs();
     res.json({ services });
   } catch (error: any) {
+    console.error('获取 AI 服务列表失败:', error);
     res.status(500).json({ error: error.message || '获取服务列表失败' });
   }
 });
@@ -1526,6 +1543,7 @@ articleRouter.post('/ai/web-search', async (req, res) => {
     const result = await service.chatWithSearch(messages);
     res.json({ content: result.content, searchResults: result.searchResults });
   } catch (error: any) {
+    console.error('联网搜索失败:', error);
     res.status(500).json({ error: error.message || '联网搜索失败' });
   }
 });
@@ -1566,6 +1584,7 @@ ${content}
 
     res.json({ content: result });
   } catch (error: any) {
+    console.error('内容优化失败:', error);
     res.status(500).json({ error: error.message || '内容优化失败' });
   }
 });
@@ -1601,6 +1620,7 @@ articleRouter.post('/ai/analyze-image-positions', async (req, res) => {
 
     res.json({ positions, totalSuggested: positions.length });
   } catch (error: any) {
+    console.error('分析配图位置失败:', error);
     res.status(500).json({ error: error.message || '分析配图位置失败' });
   }
 });
@@ -1644,6 +1664,7 @@ articleRouter.post('/ai/smart-image', async (req, res) => {
 
     res.json({ images, updatedContent });
   } catch (error: any) {
+    console.error('智能配图失败:', error);
     res.status(500).json({ error: error.message || '智能配图失败' });
   }
 });
@@ -1663,6 +1684,7 @@ articleRouter.post('/ai/fetch-single-image', async (req, res) => {
 
     res.json(image);
   } catch (error: any) {
+    console.error('获取单张图片失败:', error);
     res.status(500).json({ error: error.message || '获取图片失败' });
   }
 });
@@ -1714,6 +1736,7 @@ articleRouter.post('/ai/save-to-assets', async (req, res) => {
 
     res.json({ success: true, asset });
   } catch (error: any) {
+    console.error('收藏图片到素材库失败:', error);
     res.status(500).json({ error: error.message || '收藏失败' });
   }
 });
@@ -1948,6 +1971,7 @@ articleRouter.get('/ai/style-templates', async (_req, res) => {
     }));
     res.json({ templates });
   } catch (error: any) {
+    console.error('获取风格模板失败:', error);
     res.status(500).json({ error: error.message || '获取风格模板失败' });
   }
 });
@@ -1995,7 +2019,8 @@ articleRouter.post('/ai/analyze-style', async (req, res) => {
     try {
       const jsonMatch = result.match(/\{[\s\S]*\}/);
       analysis = jsonMatch ? JSON.parse(jsonMatch[0]) : { raw: result };
-    } catch {
+    } catch (parseError) {
+      console.error('风格分析 JSON 解析失败:', parseError);
       analysis = { raw: result };
     }
 
@@ -2052,6 +2077,7 @@ articleRouter.get('/:id/metrics', async (req, res) => {
     
     res.json({ history, summary });
   } catch (error: any) {
+    console.error('获取效果数据失败:', error);
     res.status(500).json({ error: error.message || '获取效果数据失败' });
   }
 });
@@ -2070,6 +2096,7 @@ articleRouter.post('/:id/metrics', async (req, res) => {
     
     res.json({ success: true });
   } catch (error: any) {
+    console.error('记录效果数据失败:', error);
     res.status(500).json({ error: error.message || '记录效果数据失败' });
   }
 });
@@ -2088,6 +2115,7 @@ articleRouter.get('/top-performing', async (req, res) => {
     
     res.json({ results });
   } catch (error: any) {
+    console.error('获取高表现内容失败:', error);
     res.status(500).json({ error: error.message || '获取高表现内容失败' });
   }
 });
@@ -2107,6 +2135,7 @@ articleRouter.post('/ai/seo-analysis', async (req, res) => {
     
     res.json(result);
   } catch (error: any) {
+    console.error('SEO 分析失败:', error);
     res.status(500).json({ error: error.message || 'SEO分析失败' });
   }
 });
@@ -2138,10 +2167,13 @@ articleRouter.post('/ai/seo-deep-analysis', async (req, res) => {
         res.json(analysis);
         return;
       }
-    } catch {}
+    } catch (parseError) {
+      console.error('SEO 分析结果 JSON 解析失败:', parseError);
+    }
     
     res.json({ raw: result });
   } catch (error: any) {
+    console.error('深度 SEO 分析失败:', error);
     res.status(500).json({ error: error.message || '深度SEO分析失败' });
   }
 });
@@ -2184,6 +2216,7 @@ articleRouter.post('/ai/adapt', async (req, res) => {
     
     res.json({ content: adaptedContent });
   } catch (error: any) {
+    console.error('内容改编失败:', error);
     res.status(500).json({ error: error.message || '内容改编失败' });
   }
 });
