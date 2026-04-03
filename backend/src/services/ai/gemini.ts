@@ -1,5 +1,15 @@
 import { AIService, AIServiceConfig, ChatMessage, ChatWithSearchResponse } from './index.js';
 
+// Gemini API 消息格式
+interface GeminiMessagePart {
+  text: string;
+}
+
+interface GeminiMessage {
+  role: 'model' | 'user';
+  parts: GeminiMessagePart[];
+}
+
 export class GeminiService implements AIService {
   private config: AIServiceConfig;
 
@@ -11,7 +21,7 @@ export class GeminiService implements AIService {
     return true;
   }
 
-  private convertMessages(messages: ChatMessage[]): any[] {
+  private convertMessages(messages: ChatMessage[]): GeminiMessage[] {
     return messages
       .filter(m => m.role !== 'system')
       .map(m => ({

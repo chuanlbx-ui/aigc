@@ -1,4 +1,5 @@
 import { ANTI_AI_CHECKLIST } from './prompts.js';
+import type { WorkflowData } from './workflow.js';
 
 type Range = { min: number; max: number };
 type WordCountRange = Record<string, Record<string, Range>>;
@@ -107,7 +108,7 @@ export interface QualityCheckResult {
     hkr: {
       passed: boolean;
       score: number | null;
-      details: any;
+      details: unknown;
     };
     wordCount: {
       passed: boolean;
@@ -241,7 +242,7 @@ export function checkImageCount(content: string, platform: string) {
   };
 }
 
-export function checkWorkflowComplete(workflowData: any) {
+export function checkWorkflowComplete(workflowData: Partial<WorkflowData> | null) {
   const missingSteps: string[] = [];
 
   for (const step of QUALITY_CONFIG.requiredSteps) {
@@ -259,19 +260,25 @@ export function checkWorkflowComplete(workflowData: any) {
   };
 }
 
-export function parseHKRScore(hkrData: any): { score: number | null; details: any } {
+export function parseHKRScore(hkrData: unknown): { score: number | null; details: unknown } {
   if (!hkrData) {
     return { score: null, details: null };
   }
 
-  if (typeof hkrData.overall === 'number') {
-    return { score: hkrData.overall, details: hkrData };
+  // 类型守卫：检查是否有 overall 字段
+  if (typeof hkrData === 'object' && hkrData !== null && 'overall' in hkrData && typeof (hkrData as Record<string, unknown>).overall === 'number') {
+    return { score: (hkrData as { overall: number }).overall, details: hkrData };
   }
 
-  if (hkrData.H && hkrData.K && hkrData.R) {
-    const hScore = hkrData.H.score || 0;
-    const kScore = hkrData.K.score || 0;
-    const rScore = hkrData.R.score || 0;
+  // 类型守卫：检查是否有 H, K, R 字段
+  if (
+    typeof hkrData === 'object' && hkrData !== null &&
+    'H' in hkrData && 'K' in hkrData && 'R' in hkrData
+  ) {
+    const data = hkrData as { H?: { score?: number }; K?: { score?: number }; R?: { score?: number } };
+    const hScore = data.H?.score || 0;
+    const kScore = data.K?.score || 0;
+    const rScore = data.R?.score || 0;
     return {
       score: Math.round(((hScore + kScore + rScore) / 3) * 10) / 10,
       details: hkrData,
@@ -285,8 +292,8 @@ export function performQualityCheck(params: {
   content: string;
   platform: string;
   column: string;
-  workflowData: any;
-  hkrScore?: any;
+  workflowData: Partial<WorkflowData> | null;
+  hkrScore?: unknown;
 }): QualityCheckResult {
   const { content, platform, column, workflowData, hkrScore } = params;
 

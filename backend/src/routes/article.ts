@@ -1,5 +1,5 @@
-import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { Router, Request, Response } from 'express';
+import { PrismaClient, Article, Prisma } from '@prisma/client';
 import fs from 'fs';
 import path from 'path';
 import { v4 as uuid } from 'uuid';
@@ -34,6 +34,19 @@ import { getEffectiveWorkflowData, syncWorkflowSteps } from '../services/article
 import { websocketService } from '../services/websocket.js';
 import { requireAuth } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
+import type { WorkflowData } from '../services/article/workflow.js';
+
+// 知识库文档搜索结果类型
+interface KnowledgeSearchResult {
+  id: string;
+  title: string;
+  summary: string | null;
+  tags: string | null;
+  filePath: string | null;
+  excerpt?: string;
+  similarity?: number;
+}
+
 import {
   hkrEvaluateSchema,
   idParamSchema,
@@ -144,7 +157,7 @@ articleRouter.get('/public/list', async (req, res) => {
     const skip = (parseInt(page as string) - 1) * parseInt(pageSize as string);
     const take = parseInt(pageSize as string);
 
-    const where: any = { status: 'published' };
+    const where: Prisma.ArticleWhereInput = { status: 'published' };
     if (categoryId) {
       where.categoryId = categoryId as string;
     }
@@ -350,7 +363,7 @@ articleRouter.get('/', async (req, res) => {
       page = '1', pageSize = '20'
     } = req.query;
 
-    const where: any = { userId: req.user!.id };
+    const where: Prisma.ArticleWhereInput = { userId: req.user!.id };
 
     if (categoryId) {
       where.categoryId = categoryId as string;
@@ -1009,9 +1022,9 @@ articleRouter.post('/ai/topic-discussion', validate({ body: topicDiscussionSchem
     const result = await service.generateContent(prompt);
 
     res.json({ analysis: result });
-  } catch (error: any) {
+  } catch (error) {
     console.error('选题讨论失败:', error);
-    res.status(500).json({ error: error.message || '选题讨论失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '选题讨论失败' });
   }
 });
 
@@ -1046,9 +1059,9 @@ articleRouter.post('/ai/outline', validate({ body: outlineSchema }), async (req,
     const result = await service.generateContent(prompt);
 
     res.json({ outline: result });
-  } catch (error: any) {
+  } catch (error) {
     console.error('大纲生成失败:', error);
-    res.status(500).json({ error: error.message || '大纲生成失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '大纲生成失败' });
   }
 });
 
@@ -1136,9 +1149,9 @@ articleRouter.post('/ai/draft', async (req, res) => {
     const result = await service.generateContent(prompt);
 
     res.json({ draft: result, webSearchUsed, contextUsed });
-  } catch (error: any) {
+  } catch (error) {
     console.error('初稿生成失败:', error);
-    res.status(500).json({ error: error.message || '初稿生成失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '初稿生成失败' });
   }
 });
 
@@ -1171,9 +1184,9 @@ articleRouter.post('/ai/review', validate({ body: reviewSchema }), async (req, r
     const result = await service.generateContent(prompt);
 
     res.json({ review: result });
-  } catch (error: any) {
+  } catch (error) {
     console.error('AI 审校失败:', error);
-    res.status(500).json({ error: error.message || 'AI 审校失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : 'AI 审校失败' });
   }
 });
 
@@ -1218,9 +1231,9 @@ articleRouter.post('/ai/hkr-evaluate', validate({ body: hkrEvaluateSchema }), as
     }
 
     res.json({ raw: result });
-  } catch (error: any) {
+  } catch (error) {
     console.error('HKR 评估失败:', error);
-    res.status(500).json({ error: error.message || 'HKR 评估失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : 'HKR 评估失败' });
   }
 });
 
@@ -1259,9 +1272,9 @@ articleRouter.post('/ai/hkr-improve', async (req, res) => {
     const improvedContent = await service.generateContent(prompt);
 
     res.json({ content: improvedContent });
-  } catch (error: any) {
+  } catch (error) {
     console.error('HKR 改进失败:', error);
-    res.status(500).json({ error: error.message || 'HKR 改进失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : 'HKR 改进失败' });
   }
 });
 
@@ -1277,8 +1290,8 @@ articleRouter.post('/ai/quality-check', validate({ body: qualityCheckSchema }), 
     }
 
     // 获取文章工作流数据和 HKR 评分
-    let workflowData: any = {};
-    let hkrScore: any = null;
+    let workflowData: Partial<WorkflowData> = {};
+    let hkrScore: unknown = null;
 
     if (articleId) {
       const article = await prisma.article.findFirst({
@@ -1300,8 +1313,8 @@ articleRouter.post('/ai/quality-check', validate({ body: qualityCheckSchema }), 
     });
 
     res.json(result);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message || '质量检查失败' });
+  } catch (error) {
+    res.status(500).json({ error: error instanceof Error ? error.message : '质量检查失败' });
   }
 });
 
@@ -1315,9 +1328,9 @@ articleRouter.post('/ai/quick-quality-check', async (req, res) => {
 
     const result = quickQualityCheck(content);
     res.json(result);
-  } catch (error: any) {
+  } catch (error) {
     console.error('质量检查失败:', error);
-    res.status(500).json({ error: error.message || '质量检查失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '质量检查失败' });
   }
 });
 
@@ -1334,9 +1347,9 @@ articleRouter.post('/ai/check-similarity', async (req, res) => {
     const { checkSimilarity } = await import('../services/article/dedup.js');
     const result = await checkSimilarity(title, content || '', excludeId);
     res.json(result);
-  } catch (error: any) {
+  } catch (error) {
     console.error('质量检查失败:', error);
-    res.status(500).json({ error: error.message || '质量检查失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '质量检查失败' });
   }
 });
 
@@ -1352,9 +1365,9 @@ articleRouter.post('/ai/check-topic-similarity', async (req, res) => {
     const { checkTopicSimilarity } = await import('../services/article/dedup.js');
     const result = await checkTopicSimilarity(topic, excludeId);
     res.json(result);
-  } catch (error: any) {
+  } catch (error) {
     console.error('选题相似度检测失败:', error);
-    res.status(500).json({ error: error.message || '选题相似度检测失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '选题相似度检测失败' });
   }
 });
 
@@ -1383,9 +1396,9 @@ articleRouter.post('/:id/embed', async (req, res) => {
 
     await saveArticleEmbedding(article.id, embedding);
     res.json({ success: true, dimension: embedding.length });
-  } catch (error: any) {
+  } catch (error) {
     console.error('文章向量化失败:', error);
-    res.status(500).json({ error: error.message || '向量化失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '向量化失败' });
   }
 });
 
@@ -1395,9 +1408,9 @@ articleRouter.post('/batch-embed', async (req, res) => {
     const { batchEmbedArticles } = await import('../services/article/dedup.js');
     const result = await batchEmbedArticles(50);
     res.json(result);
-  } catch (error: any) {
+  } catch (error) {
     console.error('批量文章向量化失败:', error);
-    res.status(500).json({ error: error.message || '批量向量化失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '批量向量化失败' });
   }
 });
 
@@ -1407,9 +1420,9 @@ articleRouter.get('/embed-status', async (req, res) => {
     const { getEmbeddingStatus } = await import('../services/article/dedup.js');
     const status = await getEmbeddingStatus();
     res.json(status);
-  } catch (error: any) {
+  } catch (error) {
     console.error('获取向量化状态失败:', error);
-    res.status(500).json({ error: error.message || '获取状态失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '获取状态失败' });
   }
 });
 
@@ -1421,7 +1434,7 @@ articleRouter.post('/ai/search-knowledge', async (req, res) => {
       return res.status(400).json({ error: '请提供搜索关键词' });
     }
 
-    let results: any[] = [];
+    let results: KnowledgeSearchResult[] = [];
     let searchMode = 'text'; // 默认文本搜索
 
     // 尝试向量语义搜索
@@ -1432,7 +1445,7 @@ articleRouter.post('/ai/search-knowledge', async (req, res) => {
         const queryEmbedding = await embeddingService.embed(query);
         
         // 使用 pgvector 进行相似度搜索
-        const vectorResults = await prisma.$queryRaw<any[]>`
+        const vectorResults = await prisma.$queryRaw<KnowledgeSearchResult[]>`
           SELECT id, title, summary, tags, "filePath",
                  1 - (embedding <=> ${queryEmbedding}::vector) as similarity
           FROM "KnowledgeDoc"
@@ -1499,9 +1512,9 @@ articleRouter.post('/ai/search-knowledge', async (req, res) => {
     }
 
     res.json({ results, searchMode });
-  } catch (error: any) {
+  } catch (error) {
     console.error('知识库搜索失败:', error);
-    res.status(500).json({ error: error.message || '搜索失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '搜索失败' });
   }
 });
 
@@ -1510,9 +1523,9 @@ articleRouter.get('/ai/services', async (req, res) => {
   try {
     const services = await getAllAIConfigs();
     res.json({ services });
-  } catch (error: any) {
+  } catch (error) {
     console.error('获取 AI 服务列表失败:', error);
-    res.status(500).json({ error: error.message || '获取服务列表失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '获取服务列表失败' });
   }
 });
 
@@ -1542,9 +1555,9 @@ articleRouter.post('/ai/web-search', async (req, res) => {
 
     const result = await service.chatWithSearch(messages);
     res.json({ content: result.content, searchResults: result.searchResults });
-  } catch (error: any) {
+  } catch (error) {
     console.error('联网搜索失败:', error);
-    res.status(500).json({ error: error.message || '联网搜索失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '联网搜索失败' });
   }
 });
 
@@ -1583,9 +1596,9 @@ ${content}
     const result = await service.generateContent(prompt);
 
     res.json({ content: result });
-  } catch (error: any) {
+  } catch (error) {
     console.error('内容优化失败:', error);
-    res.status(500).json({ error: error.message || '内容优化失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '内容优化失败' });
   }
 });
 
@@ -1619,9 +1632,9 @@ articleRouter.post('/ai/analyze-image-positions', async (req, res) => {
     );
 
     res.json({ positions, totalSuggested: positions.length });
-  } catch (error: any) {
+  } catch (error) {
     console.error('分析配图位置失败:', error);
-    res.status(500).json({ error: error.message || '分析配图位置失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '分析配图位置失败' });
   }
 });
 
@@ -1663,9 +1676,9 @@ articleRouter.post('/ai/smart-image', async (req, res) => {
     }
 
     res.json({ images, updatedContent });
-  } catch (error: any) {
+  } catch (error) {
     console.error('智能配图失败:', error);
-    res.status(500).json({ error: error.message || '智能配图失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '智能配图失败' });
   }
 });
 
@@ -1683,9 +1696,9 @@ articleRouter.post('/ai/fetch-single-image', async (req, res) => {
     }
 
     res.json(image);
-  } catch (error: any) {
+  } catch (error) {
     console.error('获取单张图片失败:', error);
-    res.status(500).json({ error: error.message || '获取图片失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '获取图片失败' });
   }
 });
 
@@ -1735,9 +1748,9 @@ articleRouter.post('/ai/save-to-assets', async (req, res) => {
     });
 
     res.json({ success: true, asset });
-  } catch (error: any) {
+  } catch (error) {
     console.error('收藏图片到素材库失败:', error);
-    res.status(500).json({ error: error.message || '收藏失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '收藏失败' });
   }
 });
 
@@ -1754,9 +1767,9 @@ articleRouter.post('/ai/match-scenes', async (req, res) => {
     const { matchScenes } = await import('../services/video/sceneMatching');
     const result = await matchScenes(script, platform || 'video', serviceId);
     res.json(result);
-  } catch (error: any) {
+  } catch (error) {
     console.error('场景匹配失败:', error);
-    res.status(500).json({ error: error.message || '场景匹配失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '场景匹配失败' });
   }
 });
 
@@ -1785,9 +1798,9 @@ articleRouter.post('/ai/generate-script', async (req, res) => {
     const script = await service.generateContent(prompt);
 
     res.json({ script });
-  } catch (error: any) {
+  } catch (error) {
     console.error('生成口播文案失败:', error);
-    res.status(500).json({ error: error.message || '生成失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '生成失败' });
   }
 });
 
@@ -1818,9 +1831,9 @@ articleRouter.post('/ai/sync-to-project', async (req, res) => {
     });
 
     res.json({ projectId: project.id, projectName: project.name });
-  } catch (error: any) {
+  } catch (error) {
     console.error('同步到项目失败:', error);
-    res.status(500).json({ error: error.message || '同步失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '同步失败' });
   }
 });
 
@@ -1846,9 +1859,9 @@ articleRouter.post('/ai/extract-quotes', async (req, res) => {
     const quotes = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
 
     res.json({ quotes });
-  } catch (error: any) {
+  } catch (error) {
     console.error('提取精句失败:', error);
-    res.status(500).json({ error: error.message || '提取失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '提取失败' });
   }
 });
 
@@ -1873,9 +1886,9 @@ articleRouter.post('/ai/polish-quote', async (req, res) => {
     const polishedQuote = result.trim().replace(/^["']|["']$/g, '');
 
     res.json({ polishedQuote });
-  } catch (error: any) {
+  } catch (error) {
     console.error('润色精句失败:', error);
-    res.status(500).json({ error: error.message || '润色失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '润色失败' });
   }
 });
 
@@ -1900,9 +1913,9 @@ articleRouter.post('/ai/generate-quote', async (req, res) => {
     const quote = result.trim().replace(/^["']|["']$/g, '');
 
     res.json({ quote });
-  } catch (error: any) {
+  } catch (error) {
     console.error('生成精句失败:', error);
-    res.status(500).json({ error: error.message || '生成失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '生成失败' });
   }
 });
 
@@ -1945,9 +1958,9 @@ articleRouter.post('/ai/generate-poster', async (req, res) => {
       imageUrl: `/api/articles/posters/${filename}`,
       filename,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('生成海报失败:', error);
-    res.status(500).json({ error: error.message || '生成失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '生成失败' });
   }
 });
 
@@ -1970,9 +1983,9 @@ articleRouter.get('/ai/style-templates', async (_req, res) => {
       ...value,
     }));
     res.json({ templates });
-  } catch (error: any) {
+  } catch (error) {
     console.error('获取风格模板失败:', error);
-    res.status(500).json({ error: error.message || '获取风格模板失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '获取风格模板失败' });
   }
 });
 
@@ -2025,9 +2038,9 @@ articleRouter.post('/ai/analyze-style', async (req, res) => {
     }
 
     res.json({ analysis });
-  } catch (error: any) {
+  } catch (error) {
     console.error('风格分析失败:', error);
-    res.status(500).json({ error: error.message || '分析失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '分析失败' });
   }
 });
 
@@ -2058,9 +2071,9 @@ articleRouter.post('/ai/styled-draft', async (req, res) => {
     const draft = await service.generateContent(prompt);
 
     res.json({ draft });
-  } catch (error: any) {
+  } catch (error) {
     console.error('风格化初稿生成失败:', error);
-    res.status(500).json({ error: error.message || '生成失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '生成失败' });
   }
 });
 
@@ -2076,9 +2089,9 @@ articleRouter.get('/:id/metrics', async (req, res) => {
     const summary = await getMetricsSummary(req.params.id);
     
     res.json({ history, summary });
-  } catch (error: any) {
+  } catch (error) {
     console.error('获取效果数据失败:', error);
-    res.status(500).json({ error: error.message || '获取效果数据失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '获取效果数据失败' });
   }
 });
 
@@ -2095,9 +2108,9 @@ articleRouter.post('/:id/metrics', async (req, res) => {
     await recordMetrics(req.params.id, platform, metricsData, platformPostId);
     
     res.json({ success: true });
-  } catch (error: any) {
+  } catch (error) {
     console.error('记录效果数据失败:', error);
-    res.status(500).json({ error: error.message || '记录效果数据失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '记录效果数据失败' });
   }
 });
 
@@ -2114,9 +2127,9 @@ articleRouter.get('/top-performing', async (req, res) => {
     );
     
     res.json({ results });
-  } catch (error: any) {
+  } catch (error) {
     console.error('获取高表现内容失败:', error);
-    res.status(500).json({ error: error.message || '获取高表现内容失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '获取高表现内容失败' });
   }
 });
 
@@ -2134,9 +2147,9 @@ articleRouter.post('/ai/seo-analysis', async (req, res) => {
     const result = analyzeSEO(title || '', content, platform);
     
     res.json(result);
-  } catch (error: any) {
+  } catch (error) {
     console.error('SEO 分析失败:', error);
-    res.status(500).json({ error: error.message || 'SEO分析失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : 'SEO分析失败' });
   }
 });
 
@@ -2172,9 +2185,9 @@ articleRouter.post('/ai/seo-deep-analysis', async (req, res) => {
     }
     
     res.json({ raw: result });
-  } catch (error: any) {
+  } catch (error) {
     console.error('深度 SEO 分析失败:', error);
-    res.status(500).json({ error: error.message || '深度SEO分析失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '深度SEO分析失败' });
   }
 });
 
@@ -2215,8 +2228,8 @@ articleRouter.post('/ai/adapt', async (req, res) => {
     const adaptedContent = await service.generateContent(prompt);
     
     res.json({ content: adaptedContent });
-  } catch (error: any) {
+  } catch (error) {
     console.error('内容改编失败:', error);
-    res.status(500).json({ error: error.message || '内容改编失败' });
+    res.status(500).json({ error: error instanceof Error ? error.message : '内容改编失败' });
   }
 });

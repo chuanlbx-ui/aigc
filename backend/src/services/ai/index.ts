@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, AIServiceConfig as PrismaAIServiceConfig } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -45,7 +45,7 @@ export interface AIServiceConfig {
 }
 
 // 转换数据库配置为接口类型
-function toAIServiceConfig(dbConfig: any): AIServiceConfig {
+function toAIServiceConfig(dbConfig: PrismaAIServiceConfig): AIServiceConfig {
   return {
     provider: dbConfig.provider,
     apiKey: dbConfig.apiKey,
